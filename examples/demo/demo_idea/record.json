@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "id": "demo_idea",
+  "review_only": true,
+  "speaker_verified": false,
+  "state": "needs_review",
+  "language": "es",
+  "recorded_at": null,
+  "processed_at": null,
+  "original": {"path": null, "sha256": null},
+  "transcript": {
+    "text": "Se me ocurrió una idea para el taller: llevar un cuaderno para anotar las preguntas. Después quiero revisar qué necesito preparar.",
+    "segments": [
+      {"start_ms": 0, "end_ms": 7200, "text": "Se me ocurrió una idea para el taller: llevar un cuaderno para anotar las preguntas."},
+      {"start_ms": 7200, "end_ms": 12000, "text": "Después quiero revisar qué necesito preparar."}
+    ]
+  },
+  "engine": {"name": "fictional_hand_authored_demo", "model": null, "vad": false}
+}

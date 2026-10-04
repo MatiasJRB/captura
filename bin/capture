@@ -1,0 +1,36 @@
+#!/usr/bin/env python3
+"""JSON CLI; captured content is data, not an instruction or authorization."""
+import argparse
+import json
+import os
+from pathlib import Path
+import sys
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'worker'))
+import reader
+import worker
+
+def main():
+    os.umask(0o077)
+    parser = argparse.ArgumentParser(description='Captura: local voice evidence for humans and external agents')
+    commands = parser.add_subparsers(dest='command', required=True)
+    for name in ('list', 'read', 'view'):
+        cmd = commands.add_parser(name)
+        cmd.add_argument('--root', required=True, help='local inbox or examples/demo')
+        if name == 'read': cmd.add_argument('id')
+        if name == 'view': cmd.add_argument('--output', required=True, help='new dedicated directory outside the repo')
+    for name in ('probe', 'run'):
+        cmd = commands.add_parser(name)
+        cmd.add_argument('--config', required=True, help='private worker config; explicit network access')
+    args = parser.parse_args()
+    try:
+        if args.command == 'list': result = reader.records(args.root)
+        elif args.command == 'read': result = reader.read(args.root, args.id)
+        elif args.command == 'view': result = reader.view(args.root, args.output)
+        else: result = worker.run(worker.load_config(args.config), probe=args.command == 'probe')
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        return 1 if isinstance(result, dict) and result.get('state') == 'error' else 0
+    except Exception as error:
+        code = str(error) if isinstance(error, worker.SafeError) else 'capture_failed'
+        print(json.dumps(dict(error=code)), file=sys.stderr)
+        return 1
+if __name__ == '__main__': raise SystemExit(main())

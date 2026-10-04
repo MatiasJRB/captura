@@ -1,0 +1,15 @@
+{
+  "root": "~/.local/share/captura/inbox",
+  "expected_account": "you@example.com",
+  "remote": "capture",
+  "rclone_config": "~/.config/rclone/rclone.conf",
+  "rclone": "rclone",
+  "folder_id": "",
+  "quota_project": null,
+  "ffmpeg": "ffmpeg",
+  "whisper": "whisper-cli",
+  "model": "~/.cache/whisper/ggml-small.bin",
+  "vad_model": "~/.cache/whisper/ggml-silero-v6.2.0.bin",
+  "language": "es",
+  "transcribe": true
+}

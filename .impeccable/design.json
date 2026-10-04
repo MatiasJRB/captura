@@ -1,0 +1,211 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-04T16:36:02.651733+00:00",
+  "title": "Design System: Captura",
+  "extensions": {
+    "colorMeta": {
+      "bg": {
+        "role": "neutral",
+        "displayName": "Deep green-black",
+        "tonalRamp": [
+          "oklch(15.00% 0.01210 167.18)",
+          "oklch(26.43% 0.01210 167.18)",
+          "oklch(37.86% 0.01210 167.18)",
+          "oklch(49.29% 0.01210 167.18)",
+          "oklch(60.71% 0.01210 167.18)",
+          "oklch(72.14% 0.01210 167.18)",
+          "oklch(83.57% 0.01210 167.18)",
+          "oklch(95.00% 0.01210 167.18)"
+        ]
+      },
+      "surface": {
+        "role": "neutral",
+        "displayName": "Raised green-neutral",
+        "tonalRamp": [
+          "oklch(15.00% 0.01897 160.91)",
+          "oklch(26.43% 0.01897 160.91)",
+          "oklch(37.86% 0.01897 160.91)",
+          "oklch(49.29% 0.01897 160.91)",
+          "oklch(60.71% 0.01897 160.91)",
+          "oklch(72.14% 0.01897 160.91)",
+          "oklch(83.57% 0.01897 160.91)",
+          "oklch(95.00% 0.01897 160.91)"
+        ]
+      },
+      "fg": {
+        "role": "neutral",
+        "displayName": "Soft pale neutral",
+        "tonalRamp": [
+          "oklch(15.00% 0.00753 151.88)",
+          "oklch(26.43% 0.00753 151.88)",
+          "oklch(37.86% 0.00753 151.88)",
+          "oklch(49.29% 0.00753 151.88)",
+          "oklch(60.71% 0.00753 151.88)",
+          "oklch(72.14% 0.00753 151.88)",
+          "oklch(83.57% 0.00753 151.88)",
+          "oklch(95.00% 0.00753 151.88)"
+        ]
+      },
+      "muted": {
+        "role": "neutral",
+        "displayName": "Muted sage-neutral",
+        "tonalRamp": [
+          "oklch(15.00% 0.01650 166.62)",
+          "oklch(26.43% 0.01650 166.62)",
+          "oklch(37.86% 0.01650 166.62)",
+          "oklch(49.29% 0.01650 166.62)",
+          "oklch(60.71% 0.01650 166.62)",
+          "oklch(72.14% 0.01650 166.62)",
+          "oklch(83.57% 0.01650 166.62)",
+          "oklch(95.00% 0.01650 166.62)"
+        ]
+      },
+      "accent": {
+        "role": "primary",
+        "displayName": "Quiet mint",
+        "tonalRamp": [
+          "oklch(15.00% 0.06442 165.31)",
+          "oklch(26.43% 0.06442 165.31)",
+          "oklch(37.86% 0.06442 165.31)",
+          "oklch(49.29% 0.06442 165.31)",
+          "oklch(60.71% 0.06442 165.31)",
+          "oklch(72.14% 0.06442 165.31)",
+          "oklch(83.57% 0.06442 165.31)",
+          "oklch(95.00% 0.06442 165.31)"
+        ]
+      },
+      "line": {
+        "role": "neutral",
+        "displayName": "Subtle structural green",
+        "tonalRamp": [
+          "oklch(15.00% 0.02532 160.35)",
+          "oklch(26.43% 0.02532 160.35)",
+          "oklch(37.86% 0.02532 160.35)",
+          "oklch(49.29% 0.02532 160.35)",
+          "oklch(60.71% 0.02532 160.35)",
+          "oklch(72.14% 0.02532 160.35)",
+          "oklch(83.57% 0.02532 160.35)",
+          "oklch(95.00% 0.02532 160.35)"
+        ]
+      },
+      "error": {
+        "role": "semantic",
+        "displayName": "Soft warm error",
+        "tonalRamp": [
+          "oklch(15.00% 0.07428 39.53)",
+          "oklch(26.43% 0.07428 39.53)",
+          "oklch(37.86% 0.07428 39.53)",
+          "oklch(49.29% 0.07428 39.53)",
+          "oklch(60.71% 0.07428 39.53)",
+          "oklch(72.14% 0.07428 39.53)",
+          "oklch(83.57% 0.07428 39.53)",
+          "oklch(95.00% 0.07428 39.53)"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "headline": {
+        "displayName": "Page title",
+        "purpose": "Reader title, 2rem at the mobile breakpoint."
+      },
+      "body": {
+        "displayName": "Reading text",
+        "purpose": "System-font evidence text and explanations; paragraph measure capped at 70ch."
+      },
+      "label": {
+        "displayName": "Labels and times",
+        "purpose": "Search labels, footer and relative timestamps; times have tabular numerals."
+      }
+    },
+    "shadows": [],
+    "motion": [],
+    "breakpoints": [
+      {
+        "name": "reader-stack",
+        "value": "600px"
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Local search",
+      "kind": "input",
+      "refersTo": "search-input",
+      "description": "Labeled search-field appearance; this sidecar sample does not run the record filter.",
+      "html": "<div class=\"ds-search\"><label for=\"ds-search-field\">Buscar en esta vista</label><input id=\"ds-search-field\" type=\"search\" placeholder=\"Una palabra o una idea…\" autocomplete=\"off\"></div>",
+      "css": ".ds-search{font-family:system-ui,-apple-system,sans-serif;font-size:17px;line-height:1.6;width:100%;max-width:380px;color:var(--fg,#e7ece8)}.ds-search label{display:block;font-size:.9rem;margin-bottom:6px}.ds-search input{width:100%;padding:12px 14px;border:1px solid var(--line,#3b4b42);border-radius:8px;font:inherit;background:var(--surface,#1d2822);color:var(--fg,#e7ece8);caret-color:var(--accent,#a1d6be)}.ds-search input::placeholder{color:var(--muted,#b8c5bf)}.ds-search input:hover{border-color:var(--muted,#b8c5bf)}.ds-search input:focus-visible{outline:2px solid var(--accent,#a1d6be);outline-offset:4px;}"
+    },
+    {
+      "name": "Record with fictional note",
+      "kind": "custom",
+      "refersTo": "record",
+      "description": "Flat record boundary and explicit fictional/no-original note; not an elevated card.",
+      "html": "<article class=\"ds-record\"><h2>demo_idea</h2><p>Ejemplo ficticio · sin audio original. No es un resultado de ASR.</p></article>",
+      "css": ".ds-record{font-family:system-ui,-apple-system,sans-serif;font-size:17px;line-height:1.6;color:var(--fg,#e7ece8);padding:28px 0;border-top:1px solid var(--line,#3b4b42)}.ds-record h2{font-size:1.35rem;margin:0 0 20px;overflow-wrap:anywhere}.ds-record p{color:var(--muted,#b8c5bf);font-size:.95rem;max-width:70ch;margin:0 0 16px}@media(max-width:600px){.ds-record{padding:24px 0}}"
+    },
+    {
+      "name": "Timed transcript segment",
+      "kind": "custom",
+      "refersTo": "segment-time",
+      "description": "Fictional relative time and preserved transcript text; stacks at the reader breakpoint.",
+      "html": "<ol class=\"ds-segments\"><li><span class=\"ds-time\">00:00–00:07</span><p>Una idea ficticia para revisar.</p></li></ol>",
+      "css": ".ds-segments{font-family:system-ui,-apple-system,sans-serif;font-size:17px;line-height:1.6;padding:0;margin:0;list-style:none;color:var(--fg,#e7ece8)}.ds-segments li{display:grid;grid-template-columns:130px minmax(0,1fr);gap:20px;margin:0 0 20px}.ds-segments p{margin:0;max-width:70ch;white-space:pre-wrap;overflow-wrap:anywhere}.ds-time{color:var(--muted,#b8c5bf);font-variant-numeric:tabular-nums;font-size:.9rem;padding-top:3px}@media(max-width:600px){.ds-segments li{grid-template-columns:1fr;gap:4px}}"
+    },
+    {
+      "name": "Native original audio",
+      "kind": "custom",
+      "refersTo": "original-audio",
+      "description": "Browser-native dark transport, without an asset or playable source in this sample.",
+      "html": "<audio class=\"ds-audio\" controls preload=\"metadata\" aria-label=\"Audio original\"></audio>",
+      "css": ".ds-audio{width:100%;max-width:680px;display:block;margin-bottom:24px;color-scheme:dark}"
+    },
+    {
+      "name": "Scope disclosure",
+      "kind": "custom",
+      "refersTo": "disclosure-summary",
+      "description": "Native expandable scope explanation; no action button or custom disclosure marker.",
+      "html": "<details class=\"ds-disclosure\"><summary>Qué incluye este aporte</summary><p>La herramienta termina en evidencia para revisar; las decisiones quedan afuera.</p></details>",
+      "css": ".ds-disclosure{font-family:system-ui,-apple-system,sans-serif;font-size:17px;line-height:1.6;color:var(--fg,#e7ece8);margin-top:36px;border-top:1px solid var(--line,#3b4b42);padding-top:24px}.ds-disclosure summary{cursor:pointer;font-weight:600;min-height:44px}.ds-disclosure summary:hover{color:var(--accent,#a1d6be)}.ds-disclosure summary:focus-visible{outline:2px solid var(--accent,#a1d6be);outline-offset:4px;}.ds-disclosure p{max-width:70ch;margin:16px 0}"
+    },
+    {
+      "name": "Persistent count",
+      "kind": "custom",
+      "description": "Native polite atomic status paragraph; static sample text, not a second search implementation.",
+      "html": "<p class=\"ds-count\" role=\"status\" aria-live=\"polite\" aria-atomic=\"true\">Registros para revisar: <span>1</span></p>",
+      "css": ".ds-count{font-family:system-ui,-apple-system,sans-serif;font-size:17px;line-height:1.6;color:var(--fg,#e7ece8);max-width:70ch;margin:0}"
+    }
+  ],
+  "narrative": {
+    "northStar": "Local evidence reader",
+    "overview": "A restrained, dark, linear reader inherited from the capture interface. System typography, quiet green-neutral surfaces and readable evidence take precedence over presentation. This documents the implemented reader, not a new brand, landing page or validated commercial product.\n\nThe viewer is a generated offline HTML file. An original audio control, when available, comes before timed transcript segments; fictional records explicitly say they have no original audio. Local search, a persistent live count and a native disclosure support reading without introducing agent actions.",
+    "keyCharacteristics": [
+      "Dark from the document root, including native controls and empty/error states.",
+      "One linear list; audio before text; relative segment times.",
+      "System fonts, flat dividers and restrained accent use.",
+      "Local record filtering with a persistent polite live count.",
+      "No remote assets, animation, analytics or embedded agent actions."
+    ],
+    "rules": [
+      {
+        "name": "The Evidence First Rule",
+        "body": "Use contrast and the mint accent for reading and states, not to imply that a transcript is verified or actionable.",
+        "section": "colors"
+      }
+    ],
+    "dos": [
+      "Do preserve the inherited dark root and system typography.",
+      "Do place the native original-audio control before its transcript; retain the no-original note for fictional fixtures.",
+      "Do retain relative time ranges and stack them above text on narrow screens.",
+      "Do keep search local and the count in a persistent polite, atomic live region.",
+      "Do keep empty/error explanations readable on the same dark background.",
+      "Do use fictional text in shared examples and keep actual exports private."
+    ],
+    "donts": [
+      "Don't introduce a marketing visual world, decorative imagery or remote assets.",
+      "Don't replace native audio/disclosure controls with an invented component system.",
+      "Don't add motion, analytics, an agent-action toolbar or command execution to this reader.",
+      "Don't imply speaker identity, authorization, ASR accuracy or business validation through visual styling.",
+      "Don't treat Android native widgets or its launcher icon as browser component tokens."
+    ]
+  }
+}

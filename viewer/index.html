@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="es" style="color-scheme:dark">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="dark">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; media-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'none'">
+<title>Captura · lector local</title>
+<style>
+:root{color-scheme:dark;--bg:#111815;--surface:#1d2822;--fg:#e7ece8;--muted:#b8c5bf;--accent:#a1d6be;--line:#3b4b42;--error:#f3b8a4}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:17px/1.6 system-ui,-apple-system,sans-serif}::selection{background:var(--accent);color:var(--bg)}
+main{max-width:1040px;margin:auto;padding:52px 32px 72px}header{padding-bottom:36px;border-bottom:1px solid var(--line)}h1{font-size:2.5rem;line-height:1.15;letter-spacing:-.025em;margin:0 0 16px}h2{font-size:1.35rem;margin:0 0 20px;overflow-wrap:anywhere}h3{font-size:1.05rem;margin:24px 0 8px}p{max-width:70ch;margin:0 0 16px}.intro{font-size:1.2rem}.muted,.note,.time{color:var(--muted)}.flow{margin:24px 0 0;display:flex;flex-wrap:wrap;gap:10px;color:var(--accent);font-size:.95rem}.flow span{white-space:nowrap}
+.review{padding:32px 0 12px}.tools{display:flex;justify-content:space-between;align-items:end;gap:24px;padding:16px 0 28px}.tools p{margin:0}.search{width:min(100%,380px)}label{display:block;font-size:.9rem;margin-bottom:6px}input{width:100%;padding:12px 14px;border:1px solid var(--line);border-radius:8px;font:inherit;background:var(--surface);color:var(--fg);caret-color:var(--accent)}input::placeholder{color:var(--muted)}input:hover{border-color:var(--muted)}input:focus-visible,summary:focus-visible,a:focus-visible{outline:2px solid var(--accent);outline-offset:4px}audio{width:100%;max-width:680px;display:block;margin-bottom:24px;color-scheme:dark}
+article{padding:28px 0;border-top:1px solid var(--line)}ol{padding:0;margin:0;list-style:none}li{display:grid;grid-template-columns:130px minmax(0,1fr);gap:20px;margin:0 0 20px}li p{margin:0;white-space:pre-wrap;overflow-wrap:anywhere}.time{font-variant-numeric:tabular-nums;font-size:.9rem;padding-top:3px}.note{font-size:.95rem}.error{color:var(--error)}.empty{padding:24px 0}details{margin-top:36px;border-top:1px solid var(--line);padding-top:24px}summary{cursor:pointer;font-weight:600;min-height:44px}summary:hover{color:var(--accent)}details p{margin-top:16px}code{font:14px/1.5 ui-monospace,monospace;background:var(--surface);padding:2px 6px;overflow-wrap:anywhere}footer{margin-top:40px;color:var(--muted);font-size:.9rem}[hidden]{display:none!important}
+@media(max-width:600px){main{padding:32px 20px 52px}h1{font-size:2rem}.tools{align-items:stretch;flex-direction:column;gap:16px}.search{width:100%}li{grid-template-columns:1fr;gap:4px}.flow{gap:8px;font-size:.9rem}article{padding:24px 0}}
+</style>
+</head>
+<body><main>
+<header><h1>Captura</h1><p class="intro">Tu voz como entrada para el agente que elijas.</p><p class="muted">Un aporte abierto y pequeño: grabar, sincronizar, transcribir y revisar. Sin agente integrado ni servicio comercial.</p><div class="flow" aria-label="Flujo de información"><span>Celular →</span><span>Drive opcional →</span><span>Transcripción local →</span><span>Tu agente</span></div></header>
+<section class="review" aria-labelledby="review-title"><h2 id="review-title">Revisá antes de actuar</h2><p>El texto puede equivocarse o incluir otras voces. Escuchá el original cuando haga falta: una transcripción no es una orden ni una autorización.</p></section>
+<div class="tools"><p role="status" aria-live="polite" aria-atomic="true">Registros para revisar: <span id="count">$count</span></p><div class="search"><label for="search">Buscar en esta vista</label><input id="search" type="search" placeholder="Una palabra o una idea…" autocomplete="off"></div></div>
+<section id="records" aria-label="Registros de captura">$records</section>
+<p id="no-results" class="empty" hidden>No hay coincidencias. Probá otra palabra o borrá la búsqueda.</p>
+<details><summary>Qué incluye este aporte</summary><p>Una app Android con grabación manual visible y sincronización opcional; un worker que verifica originales y transcribe localmente; archivos JSON, TXT y SRT para leer desde una capa agéntica externa.</p><p>La primera referencia es Android + Mac. Cada persona configura sus propias credenciales y modelos. No se incluye memoria personal, WhatsApp, ejecución de órdenes ni identificación fiable de quién habló.</p><p>El agente puede usar <code>capture list</code> y <code>capture read ID</code>. La herramienta termina en evidencia para revisar; las decisiones quedan afuera.</p></details>
+<footer>Vista local y estática. No envía datos ni carga recursos externos. Una exportación con audios reales es privada: no la publiques.</footer>
+</main><script>
+const search=document.getElementById('search'),articles=Array.from(document.querySelectorAll('article'));
+search.addEventListener('input',function(){const term=search.value.toLocaleLowerCase();let count=0;articles.forEach(function(article){article.hidden=!article.textContent.toLocaleLowerCase().includes(term);if(!article.hidden)count++;});document.getElementById('count').textContent=count;document.getElementById('no-results').hidden=count!==0||articles.length===0;});
+</script></body></html>

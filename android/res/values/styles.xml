@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Deliberately dark even when Android is in light mode. -->
+    <style name="AppTheme" parent="android:style/Theme.Material.NoActionBar">
+        <item name="android:fontFamily">sans</item>
+        <item name="android:colorAccent">#A1D6BE</item>
+        <item name="android:colorControlNormal">#B8C5BF</item>
+        <item name="android:colorButtonNormal">#29352F</item>
+        <item name="android:textColorPrimary">#E7ECE8</item>
+        <item name="android:textColorSecondary">#B8C5BF</item>
+        <item name="android:colorBackground">#111815</item>
+        <item name="android:windowBackground">#111815</item>
+        <item name="android:navigationBarColor">#111815</item>
+        <item name="android:statusBarColor">#111815</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowLightNavigationBar">false</item>
+        <item name="android:forceDarkAllowed">false</item>
+    </style>
+</resources>
