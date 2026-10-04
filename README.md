@@ -39,6 +39,7 @@ that folder is sensitive and must never be published casually.
 - [Agent integration](docs/agent-interface.md): read-only CLI and versioned record format.
 - [Privacy](docs/privacy.md): permissions, cloud copies and review boundaries.
 - [Origins and licenses](NOTICE.md).
+- [Local verification and limitations](docs/verification.md).
 
 ```sh
 ANDROID_HOME=/path/to/android-sdk ./android/build.sh
