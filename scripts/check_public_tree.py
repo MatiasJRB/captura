@@ -1,10 +1,34 @@
 #!/usr/bin/env python3
-"""Small publication safety net, not a secret-scanning or legal-audit guarantee."""
+"""Small publication safety net, not a secret-scanning or legal-audit guarantee.
+
+With --default-branch it also checks, offline, that the default branch as last fetched
+(origin/HEAD) has the setup guides and scripts: the guides tell people to "git clone"
+the repository, which checks out that branch.
+"""
+import argparse
 from pathlib import Path
 import re
 import subprocess
 import sys
 root=Path(__file__).resolve().parents[1]
+HANDOUT=('docs/ios.md','docs/worker.md','ios/scripts/configure.py','ios/scripts/check.py','bin/capture')
+
+def git(*args):
+    return subprocess.run(['git',*args],cwd=root,capture_output=True,text=True)
+
+def default_branch_errors():
+    head=git('symbolic-ref','--quiet','refs/remotes/origin/HEAD')
+    if head.returncode:
+        return ['origin/HEAD is unknown here. Run "git remote set-head origin --auto" (it asks the remote), then run this again.']
+    ref=head.stdout.strip();short=ref.replace('refs/remotes/','',1)
+    missing=[name for name in HANDOUT if git('cat-file','-e',ref+':'+name).returncode]
+    return [f'{short} (as last fetched) has no {name}, so a fresh "git clone" would not either. '
+            'Merge and push the branch that has it, run "git fetch origin", then run this again.' for name in missing]
+
+parser=argparse.ArgumentParser(description='Publication safety net (offline).')
+parser.add_argument('--default-branch',action='store_true',
+                    help='also check that origin/HEAD, as last fetched, has '+', '.join(HANDOUT))
+args=parser.parse_args()
 paths=subprocess.check_output(['git','ls-files','--cached','--others','--exclude-standard','-z'],cwd=root).decode().split('\0')
 errors=[]
 for name in sorted(set(paths)-{''}):
@@ -25,6 +49,8 @@ for name in sorted(set(paths)-{''}):
               r'(?i)(?:access_token|refresh_token)\s*["\']?\s*:\s*["\'][A-Za-z0-9._-]{20,}']
     for pattern in patterns:
         if re.search(pattern,text):errors.append(name+': possible private data');break
+if args.default_branch:errors+=default_branch_errors()
 if errors:
     print('\n'.join(errors),file=sys.stderr);raise SystemExit(1)
-print(f'Checked {len(set(paths)-{""})} candidate files; no forbidden files or configured secret patterns.')
+print(f'Checked {len(set(paths)-{""})} candidate files; no forbidden files or configured secret patterns.'
+      +(' The default branch has the setup guides and scripts.' if args.default_branch else ''))
