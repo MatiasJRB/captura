@@ -25,7 +25,12 @@ extension AppModel {
         excludeFromBackup(baseDirectory)
         let settingsStore = SyncSettingsStore(directory: syncDirectory)
         excludeFromBackup(syncDirectory)
-        let auth = GoogleSignInController()
+        let tokenStore = KeychainTokenStore()
+        let sealer = KeychainSecretSealer()
+        if settingsStore.isNewInstall {
+            discardKeychainLeftovers(tokenStore: tokenStore, sealer: sealer)
+        }
+        let auth = GoogleSignInController(store: tokenStore)
         let network = NetworkMonitor()
 
         var queue: UploadQueue?
@@ -34,7 +39,7 @@ extension AppModel {
             queue = try UploadQueue(
                 storeDirectory: syncDirectory,
                 capturesRoot: recorder.directory,
-                sealer: KeychainSecretSealer()
+                sealer: sealer
             )
         } catch {
             let code = (error as? UploadQueueError)?.code ?? "queue-unavailable"
@@ -62,6 +67,16 @@ extension AppModel {
             network: network,
             background: SystemBackgroundExecution()
         )
+    }
+
+    /// iOS keeps Keychain items when the app is deleted, but removes Application
+    /// Support (settings, queue, recordings). On a new install, a stored Google link or
+    /// session key belongs to a deleted install: drop them, so nothing is linked (and no
+    /// Drive folder is created) until the person links again. The grant itself stays at
+    /// Google, as after deleting any app; it can be removed from the Google account.
+    nonisolated static func discardKeychainLeftovers(tokenStore: TokenStore, sealer: KeychainSecretSealer) {
+        try? tokenStore.delete()
+        try? sealer.deleteKey()
     }
 
     private static func excludeFromBackup(_ directory: URL) {

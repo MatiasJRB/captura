@@ -115,6 +115,17 @@ final class SyncSettingsStoreTests: XCTestCase {
         XCTAssertEqual(reloaded.lastMessage, "Sincronizado · originales conservados en el teléfono.")
     }
 
+    func testOnlyTheFirstLaunchIsANewInstall() throws {
+        XCTAssertTrue(SyncSettingsStore(directory: directory).isNewInstall)
+        XCTAssertFalse(SyncSettingsStore(directory: directory).isNewInstall)
+    }
+
+    func testUnreadableSettingsAreNotTakenForANewInstall() throws {
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try Data("not json".utf8).write(to: directory.appendingPathComponent(SyncSettingsStore.fileName))
+        XCTAssertFalse(SyncSettingsStore(directory: directory).isNewInstall)
+    }
+
     func testUnreadableFileIsKeptAsideNotOverwritten() throws {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let file = directory.appendingPathComponent(SyncSettingsStore.fileName)
@@ -227,5 +238,40 @@ final class RecordingTokenProvider: GoogleAccessTokenProviding, @unchecked Senda
 
     func invalidateAccessToken() async {
         lock.withLock { log.append("invalidate") }
+    }
+}
+
+/// Keychain items survive deleting the app; Application Support does not.
+final class KeychainLeftoverTests: XCTestCase {
+    private let service = "org.example.captura.tests.\(UUID().uuidString)"
+    private var tokenStore: KeychainTokenStore!
+    private var sealer: KeychainSecretSealer!
+
+    override func setUp() {
+        super.setUp()
+        tokenStore = KeychainTokenStore(service: service + ".google")
+        sealer = KeychainSecretSealer(service: service + ".sync")
+    }
+
+    override func tearDown() {
+        try? tokenStore.delete()
+        try? sealer.deleteKey()
+        super.tearDown()
+    }
+
+    func testANewInstallDiscardsTheLinkAndSessionKeyOfADeletedInstall() throws {
+        try tokenStore.save(GoogleCredential(refreshToken: AppAuthFixtures.refreshToken, accountEmail: AppAuthFixtures.email))
+        let sealed = try sealer.seal("https://www.googleapis.com/upload/drive/v3/files?upload_id=fixture")
+
+        AppModel.discardKeychainLeftovers(tokenStore: tokenStore, sealer: sealer)
+
+        XCTAssertNil(try tokenStore.load(), "the person links again explicitly")
+        let reopened = KeychainSecretSealer(service: service + ".sync")
+        XCTAssertThrowsError(try reopened.open(sealed), "the old session key is gone")
+    }
+
+    func testDiscardingWithNothingStoredIsHarmless() throws {
+        AppModel.discardKeychainLeftovers(tokenStore: tokenStore, sealer: sealer)
+        XCTAssertNil(try tokenStore.load())
     }
 }

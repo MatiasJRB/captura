@@ -39,11 +39,15 @@ final class SyncSettingsStore: Sendable {
     /// Sync is then disabled, because a device ID that is not saved would change on the
     /// next launch and orphan the Drive folder.
     let isPersistent: Bool
+    /// No settings file existed: the first launch of this install (Application Support
+    /// is removed with the app; the Keychain is not).
+    let isNewInstall: Bool
 
     init(directory: URL) {
         fileURL = directory.appendingPathComponent(Self.fileName, isDirectory: false)
         let manager = FileManager.default
         try? manager.createDirectory(at: directory, withIntermediateDirectories: true)
+        isNewInstall = !manager.fileExists(atPath: fileURL.path)
         if let data = try? Data(contentsOf: fileURL),
            let loaded = try? JSONDecoder.settings.decode(SyncSettings.self, from: data),
            DriveClient.isValidDeviceID(loaded.deviceID) {
