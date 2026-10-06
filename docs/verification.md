@@ -68,6 +68,17 @@ Passed:
   team through `xcodebuild -showBuildSettings`, confirming the `#include?` of the local
   file works.
 - Python suites pass on Python 3.9.6 (the one Xcode provides) and 3.14.
+- Uploader/worker contract: `WorkerFixtureContractTests` (7 Swift tests) runs the real
+  upload queue, Drive client and sync engine against the in-memory Drive fake, including
+  an interrupted and resumed upload, and pins the result in `tests/fixtures/ios_contract/`.
+  `tests/test_ios_contract.py` (15 tests) runs the unmodified worker on that fixture,
+  with negative controls (tampered checksum, corrupted bytes, shared file or folder,
+  wrong parent, oversize, wrong MIME type). Drive is emulated, not called.
+- Re-run after merging the pause notice, the contract and the setup helpers (same Mac,
+  Xcode 26.1): `swift test` 461 tests; hosted tests on the iPhone 17 simulator 252 tests,
+  0 failures, 6 skipped (the opt-in microphone and speech tests, the Data Protection test
+  and the configured-build test); Debug and Release device compiles; Python 18 tests in
+  `worker/` and 64 in `tests/` on 3.9.6 and 3.14; publication check.
 
 Not verified yet:
 - Installing on a physical iPhone with a free Personal Team, the 7-day reinstall and the
