@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'worker'))
+import onboarding
 import reader
 import worker
 
@@ -21,16 +22,43 @@ def main():
     for name in ('probe', 'run'):
         cmd = commands.add_parser(name)
         cmd.add_argument('--config', required=True, help='private worker config; explicit network access')
+    setup = dict(init='write a private worker config (no network)',
+                 doctor='check tools, models and the rclone remote (no network)',
+                 pin='store the exact Drive folder ID after checking it (no network)')
+    for name, summary in setup.items():
+        cmd = commands.add_parser(name, help=summary, description=summary)
+        cmd.add_argument('--config', default=onboarding.DEFAULT_CONFIG,
+                         help='private worker config (default: %(default)s)')
+        if name == 'init':
+            cmd.add_argument('--account', required=True, help='Google account the phone links')
+            cmd.add_argument('--remote', default=onboarding.DEFAULT_REMOTE, help='rclone remote name (default: %(default)s)')
+            cmd.add_argument('--model', default=onboarding.DEFAULT_MODEL, help='Whisper GGML model (default: %(default)s)')
+            cmd.add_argument('--force', action='store_true', help='replace an existing config (loses folder_id)')
+        if name == 'pin':
+            cmd.add_argument('--folder-id', required=True, help='folder ID shown by the phone and by probe')
     args = parser.parse_args()
+    prog = sys.argv[0]
     try:
         if args.command == 'list': result = reader.records(args.root)
         elif args.command == 'read': result = reader.read(args.root, args.id)
         elif args.command == 'view': result = reader.view(args.root, args.output)
-        else: result = worker.run(worker.load_config(args.config), probe=args.command == 'probe')
+        elif args.command == 'init':
+            result = onboarding.init_config(args.config, args.account, prog, args.remote, args.model, args.force)
+        elif args.command == 'doctor': result = onboarding.doctor(args.config, prog)
+        elif args.command == 'pin': result = onboarding.pin_folder(args.config, args.folder_id, prog)
+        else:
+            config = worker.load_config(args.config)
+            result = worker.run(config, probe=args.command == 'probe')
+            # Advice for the person or agent reading the output; the worker status is unchanged.
+            next_step = onboarding.hint(result, Path(args.config).expanduser().absolute(), config, prog)
+            if next_step: result = dict(result, next_step=next_step)
         print(json.dumps(result, ensure_ascii=False, indent=2))
-        return 1 if isinstance(result, dict) and result.get('state') == 'error' else 0
+        return 1 if isinstance(result, dict) and result.get('state') in ('error', 'blocked') else 0
     except Exception as error:
         code = str(error) if isinstance(error, worker.SafeError) else 'capture_failed'
-        print(json.dumps(dict(error=code)), file=sys.stderr)
+        failure = dict(error=code)
+        if args.command in ('probe', 'run') and not Path(args.config).expanduser().is_file():
+            failure['next_step'] = onboarding.command(prog, 'init', '--config', Path(args.config).expanduser().absolute(), '--account', 'you@yourdomain.com')
+        print(json.dumps(failure), file=sys.stderr)
         return 1
 if __name__ == '__main__': raise SystemExit(main())
