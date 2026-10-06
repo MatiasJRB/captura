@@ -13,11 +13,16 @@ Android records visible, user-started audio; optional Drive sync moves closed ch
 a local worker verifies originals and transcribes with whisper.cpp + voice activity
 detection (VAD). You or your external agent read the results and review the evidence.
 
-```text
-Android (offline recording) → optional private Drive folder
-                           → local verified audio → Whisper + VAD
-                           → JSON / TXT / SRT → human or external agent
-```
+## From voice to evidence
+
+<p align="center">
+  <img src="assets/brand/pipeline.svg" alt="User-started Android capture → optional opt-in Drive sync → local hash checks and Whisper/VAD → original plus JSON/TXT/SRT → review by you or your external agent. No automatic actions." width="600">
+</p>
+
+**Capture → optional sync → local transcription → review.** The original stays
+available throughout. Drive moves closed files, not a live microphone stream.
+USB and wireless debugging are development/install tools, not requirements for
+recording or Drive sync.
 
 No embedded agent, subscriptions, mandatory Codex/OpenClaw connection, analytics,
 automatic task creation or execution of spoken instructions. No special hardware.
