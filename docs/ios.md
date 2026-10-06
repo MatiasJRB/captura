@@ -187,6 +187,10 @@ Account. Tap **Confiar en "…"** (Trust), then confirm.
      iPhone" with the status "Solo en el iPhone".
    - *If you see "Captura no tiene permiso para usar el micrófono":* tap **Abrir Ajustes**
      and turn on Micrófono.
+   - While it records the first time, iOS also asks whether Captura may send
+     notifications. Tap **Permitir**: if recording pauses while Captura isn't on screen
+     (a call, low storage), you get "Captura se pausó" or "Captura dejó de grabar". If you
+     don't allow them, recording works the same, but nothing tells you it paused.
    - Tell people before you record them. The app reminds you with "Avisá a las personas
      antes de grabar."
 2. **Link Google Drive.** Under "Google Drive", tap **Vincular Google Drive**. iOS asks
@@ -254,7 +258,7 @@ open the app. Do step 2 and everything comes back.
 | The app won't open after a week | Your free install expired (7 days). | [Reinstall from the Mac](#every-7-days-reinstall-from-the-mac). Your data is kept. |
 | Xcode: "Developer Mode disabled" or the iPhone isn't listed | The iPhone isn't paired or Developer Mode is off. | Step 7. Unlock the iPhone and plug the cable in again. After an iOS update, pair again. |
 | Xcode: "iOS … is not installed" or "… is not supported" | The iOS platform is missing, or Xcode is older than your iPhone's iOS. | Xcode > Settings > Components > **Get** next to iOS. Update Xcode from the App Store. |
-| "En pausa · no se está grabando" | A call, Siri or another app's audio took over the microphone. It doesn't always resume by itself. | Tap **Reanudar ahora**. Make sure you see "Grabando" again. |
+| "En pausa · no se está grabando", or the notification "Captura se pausó" | A call, Siri or another app's audio took over the microphone. It doesn't always resume by itself. | Open Captura and tap **Reanudar ahora**. Make sure you see "Grabando" again. |
 | "La grabación se detuvo porque queda poco espacio…" or "Queda poco espacio en el iPhone…" | Less than about 200 MB is free. What was recorded is kept. | Free up space on the iPhone (other apps, photos), then tap **Grabar**. Captura never deletes recordings itself, and deleting the app deletes them all. |
 | "Se conservó 1 archivo incompleto…" | A recording was cut off (crash, reinstall). The piece is kept. | Nothing to do. The piece stays on the iPhone and isn't uploaded automatically. |
 | "N en revisión" in the sync counters | Some uploads failed several times. They're kept on the iPhone. | Tap **Reintentar los audios en revisión** once the connection works. |
