@@ -101,8 +101,20 @@ final class DriveClientErrorTests: XCTestCase {
         XCTAssertEqual(error, .retryable(status: 403))
     }
 
+    func testFullDriveIsRetryableAndNotTheAudiosFault() async {
+        let error = await status(403, json: #"{"error":{"errors":[{"domain":"global","reason":"storageQuotaExceeded"}],"code":403}}"#)
+        XCTAssertEqual(error, .storageFull)
+        XCTAssertEqual(error?.isRetryable, true)
+        XCTAssertEqual(error?.code, "drive-storage-full")
+    }
+
+    func testProjectDailyLimitIsRetryable() async {
+        let error = await status(403, json: #"{"error":{"errors":[{"domain":"usageLimits","reason":"dailyLimitExceeded"}],"code":403}}"#)
+        XCTAssertEqual(error, .retryable(status: 403))
+    }
+
     func testOtherForbiddenIsFailed() async {
-        let error = await status(403, json: #"{"error":{"errors":[{"reason":"storageQuotaExceeded"}]}}"#)
+        let error = await status(403, json: #"{"error":{"errors":[{"reason":"forbidden"}]}}"#)
         XCTAssertEqual(error, .failed(status: 403))
         XCTAssertEqual(error?.isRetryable, false)
     }

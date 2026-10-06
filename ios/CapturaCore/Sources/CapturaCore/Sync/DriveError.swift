@@ -16,8 +16,11 @@ public enum DriveError: Error, Equatable, Sendable {
     case connectionFailed
     /// The resumable session is gone (404/410); a new session must be started.
     case sessionExpired
-    /// 429, 5xx or a 403 rate-limit reply: try again later.
+    /// 429, 5xx or a 403 rate-limit or daily-limit reply: try again later.
     case retryable(status: Int)
+    /// 403 `storageQuotaExceeded`: the account's Drive is full. Not the audio's fault;
+    /// every upload fails until space is freed, so the run stops and retries later.
+    case storageFull
     /// Any other HTTP failure.
     case failed(status: Int)
     case invalidResponse
@@ -47,6 +50,7 @@ public enum DriveError: Error, Equatable, Sendable {
         case .connectionFailed: return "drive-connection-failed"
         case .sessionExpired: return "upload-session-expired"
         case .retryable(let status): return "drive-retry-later-\(status)"
+        case .storageFull: return "drive-storage-full"
         case .failed(let status): return "drive-http-\(status)"
         case .invalidResponse: return "invalid-drive-response"
         case .oversizedResponse: return "oversized-google-response"
@@ -65,14 +69,17 @@ public enum DriveError: Error, Equatable, Sendable {
     /// Transient: the same request may succeed later without any change to the item.
     public var isRetryable: Bool {
         switch self {
-        case .connectionFailed, .sessionExpired, .retryable, .uploadNoProgress, .missingRemoteReceipt, .tokenUnavailable:
+        case .connectionFailed, .sessionExpired, .retryable, .storageFull, .uploadNoProgress, .missingRemoteReceipt,
+             .tokenUnavailable:
             return true
         default:
             return false
         }
     }
 
-    /// Maps a non-success HTTP reply. Mirrors the worker's rate-limit detection.
+    /// Maps a non-success HTTP reply. Mirrors the worker's rate-limit detection, and
+    /// also treats account- or project-wide 403 limits as transient: they would fail
+    /// every audio alike, so they must not count against (and quarantine) each one.
     static func from(_ response: HTTPResponse) -> DriveError {
         switch response.status {
         case 401:
@@ -81,6 +88,7 @@ public enum DriveError: Error, Equatable, Sendable {
             return .retryable(status: response.status)
         case 403:
             let text = String(decoding: response.body.prefix(65_536), as: UTF8.self)
+            if text.contains(storageFullMarker) { return .storageFull }
             if rateLimitMarkers.contains(where: { text.contains($0) }) { return .retryable(status: 403) }
             if missingScopeMarkers.contains(where: { text.contains($0) }) { return .needsReauthorization }
             return .failed(status: 403)
@@ -89,7 +97,11 @@ public enum DriveError: Error, Equatable, Sendable {
         }
     }
 
-    private static let rateLimitMarkers = ["rateLimitExceeded", "RateLimitExceeded", "RATE_LIMIT_EXCEEDED", "QUOTA_EXCEEDED"]
+    private static let storageFullMarker = "storageQuotaExceeded"
+    private static let rateLimitMarkers = [
+        "rateLimitExceeded", "RateLimitExceeded", "RATE_LIMIT_EXCEEDED", "QUOTA_EXCEEDED",
+        "dailyLimitExceeded", "quotaExceeded",
+    ]
     private static let missingScopeMarkers = ["insufficientPermissions", "ACCESS_TOKEN_SCOPE_INSUFFICIENT", "insufficientScopes"]
 }
 

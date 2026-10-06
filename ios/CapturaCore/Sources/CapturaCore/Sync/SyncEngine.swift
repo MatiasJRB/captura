@@ -102,6 +102,8 @@ public struct SyncSummary: Equatable, Sendable {
             return "La carpeta de Drive no es privada o no se puede usar. Los audios siguen en el teléfono."
         case .alreadyRunning?:
             return "Ya hay una sincronización en curso."
+        case .retryLater(DriveError.storageFull.code)?:
+            return "Google Drive está lleno. Los audios siguen en el teléfono; liberá espacio en Drive y volvé a sincronizar."
         case .retryLater?, .localStorageFailed?:
             return "No se pudo sincronizar. Los audios siguen en el teléfono. Reintentá o revisá la conexión a Google."
         case nil:

@@ -32,7 +32,7 @@ final class FakeDriveServer: HTTPTransport, @unchecked Sendable {
     private var nextSession = 1
     private var faults: [Fault] = []
     private var failAllStatus: Int?
-    private var rejectedNames: [String: Int] = [:]
+    private var rejectedNames: [String: HTTPResponse] = [:]
     private var log: [String] = []
 
     /// "METHOD path" of every request, without query or session IDs.
@@ -45,8 +45,10 @@ final class FakeDriveServer: HTTPTransport, @unchecked Sendable {
     /// Every request answers `status` until set back to nil.
     func failEverything(status: Int?) { lock.withLock { failAllStatus = status } }
 
-    /// Starting an upload of `name` always answers `status`.
-    func rejectUploads(named name: String, status: Int) { lock.withLock { rejectedNames[name] = status } }
+    /// Starting an upload of `name` always answers `status` (with an optional JSON body).
+    func rejectUploads(named name: String, status: Int, json: String = "") {
+        lock.withLock { rejectedNames[name] = HTTPResponse(status: status, body: Data(json.utf8)) }
+    }
 
     func content(of id: String) -> Data? { lock.withLock { files[id]?.content } }
 
@@ -110,8 +112,8 @@ final class FakeDriveServer: HTTPTransport, @unchecked Sendable {
             XCTAssertEqual(query["uploadType"], "resumable")
             XCTAssertEqual(request.headers["X-Upload-Content-Type"], "audio/mp4")
             let metadata = try object(body)
-            if let name = metadata["name"] as? String, let status = rejectedNames[name] {
-                return HTTPResponse(status: status)
+            if let name = metadata["name"] as? String, let rejection = rejectedNames[name] {
+                return rejection
             }
             guard let id = metadata["id"] as? String, files[id] == nil,
                   let total = request.headers["X-Upload-Content-Length"].flatMap(Int64.init)

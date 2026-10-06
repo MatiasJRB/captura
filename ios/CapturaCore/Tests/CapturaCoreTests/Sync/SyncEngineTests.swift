@@ -407,6 +407,29 @@ final class SyncEngineTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: captures.appending(component: Fixture.chunkName(1)).path))
     }
 
+    func testFullDriveNeverQuarantinesTheAudios() async throws {
+        let full = #"{"error":{"errors":[{"domain":"global","reason":"storageQuotaExceeded"}],"code":403}}"#
+        for index in 1...3 {
+            try record(index)
+            server.rejectUploads(named: Fixture.chunkName(index), status: 403, json: full)
+        }
+        let engine = makeEngine()
+
+        var last = SyncSummary()
+        for _ in 0..<3 {
+            env.now = env.now.addingTimeInterval(3_600)
+            last = await engine.run(.manual(requestedAt: env.now))
+        }
+
+        XCTAssertEqual(last.stopReason, .retryLater(code: "drive-storage-full"))
+        XCTAssertEqual(last.needsReview, 0)
+        XCTAssertEqual(last.remaining, 3)
+        XCTAssertEqual(last.statusMessage, "Google Drive está lleno. Los audios siguen en el teléfono; liberá espacio en Drive y volvé a sincronizar.")
+        let items = await queue.items()
+        XCTAssertEqual(items.map(\.rejections), [0, 0, 0], "an account-wide limit is not the audio's fault")
+        XCTAssertEqual(items.map(\.state), [.pending, .pending, .pending])
+    }
+
     func testChangedOriginalIsQuarantinedAndNeverUploaded() async throws {
         let url = try record(1)
         try await queue.enqueue(fileAt: url, now: env.now)
