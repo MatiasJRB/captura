@@ -139,6 +139,26 @@ final class GoogleTokenClientTests: XCTestCase {
         try await makeClient(transport).revoke(token: "stale")
     }
 
+    // MARK: Bodies Google actually returned (2026-10-06, fictional client ID, no credentials)
+
+    func testGoogleUnknownClientAnswerTellsWhichSettingToFix() async {
+        let body = Data("{\n  \"error\": \"invalid_client\",\n  \"error_description\": \"The OAuth client was not found.\"\n}".utf8)
+        let transport = AuthStubTransport([HTTPResponse(status: 401, headers: ["Content-Type": "application/json; charset=utf-8"], body: body)])
+        do {
+            _ = try await makeClient(transport).exchange(code: "4/fixture-code", verifier: "v")
+            XCTFail("Expected an error")
+        } catch {
+            XCTAssertEqual(error as? GoogleAuthError, .tokenRequestFailed(status: 401, error: "invalid_client"))
+            XCTAssertTrue(GoogleAuthError.userMessage(for: error).contains("CAPTURA_GOOGLE_IOS_CLIENT_ID"))
+        }
+    }
+
+    func testGoogleAnswerForAlreadyDeadTokenCountsAsRevoked() async throws {
+        let body = Data("{\n  \"error\": \"invalid_token\"\n}".utf8)
+        let transport = AuthStubTransport([HTTPResponse(status: 400, body: body)])
+        try await makeClient(transport).revoke(token: "fixture-refresh-token")
+    }
+
     func testRevokeFailureThrowsRevocationFailed() async {
         let transport = AuthStubTransport([HTTPResponse(status: 500)])
         await assertThrowsAuthError(.revocationFailed(status: 500)) { try await makeClient(transport).revoke(token: "t") }
