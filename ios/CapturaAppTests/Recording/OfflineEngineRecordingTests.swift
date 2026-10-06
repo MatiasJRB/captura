@@ -17,13 +17,17 @@ final class OfflineEngineRecordingTests: XCTestCase {
         try? FileManager.default.removeItem(at: root)
     }
 
-    /// Provides a continuous synthetic tone as the "hardware" input.
+    /// Provides a continuous synthetic signal as the "hardware" input: a tone, or
+    /// white noise (the hardest case for the encoder, so the largest files).
     private final class ToneSource {
         let buffer: AVAudioPCMBuffer
+        private let noise: Bool
         private var phase = 0
+        private var generator = SystemRandomNumberGenerator()
 
-        init(format: AVAudioFormat) {
+        init(format: AVAudioFormat, noise: Bool = false) {
             buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 8192)!
+            self.noise = noise
         }
 
         func next(_ frames: AVAudioFrameCount) -> UnsafePointer<AudioBufferList>? {
@@ -32,7 +36,9 @@ final class OfflineEngineRecordingTests: XCTestCase {
             let rate = Float(buffer.format.sampleRate)
             for channel in 0..<Int(buffer.format.channelCount) {
                 for index in 0..<Int(count) {
-                    buffer.floatChannelData![channel][index] = 0.3 * sin(2 * .pi * 330 * Float(phase + index) / rate)
+                    buffer.floatChannelData![channel][index] = noise
+                        ? Float.random(in: -0.3...0.3, using: &generator)
+                        : 0.3 * sin(2 * .pi * 330 * Float(phase + index) / rate)
                 }
             }
             phase += Int(count)
@@ -60,8 +66,8 @@ final class OfflineEngineRecordingTests: XCTestCase {
         }
     }
 
-    private func recordOffline(hardware: AVAudioFormat, seconds: Double, chunkDuration: TimeInterval) async throws -> (RecorderController, [ClosedChunk]) {
-        let source = ToneSource(format: hardware)
+    private func recordOffline(hardware: AVAudioFormat, seconds: Double, chunkDuration: TimeInterval, noise: Bool = false) async throws -> (RecorderController, [ClosedChunk]) {
+        let source = ToneSource(format: hardware, noise: noise)
         let engine = try makeOfflineEngine(hardware: hardware, source: source)
         let capture = AVAudioCaptureEngine(engine: engine)
         let controller = RecorderController(
@@ -116,4 +122,30 @@ final class OfflineEngineRecordingTests: XCTestCase {
         XCTAssertEqual(Double(file.length) / file.fileFormat.sampleRate, 1.0, accuracy: 0.05)
         try RecorderEvidence.keep([chunk.url], test: "Offline" + #function)
     }
+
+    /// A full default chunk (15 minutes of worst-case noise) must stay far below the
+    /// worker's 64 MiB limit and decode to the full duration. Renders offline in seconds.
+    func testDefaultFifteenMinuteChunkFitsWorkerLimits() async throws {
+        let hardware = AVAudioFormat(standardFormatWithSampleRate: 48_000, channels: 1)!
+        let (_, chunks) = try await recordOffline(
+            hardware: hardware,
+            seconds: ChunkRotationDefaults.seconds + 2,
+            chunkDuration: ChunkRotationDefaults.seconds,
+            noise: true
+        )
+        XCTAssertEqual(chunks.count, 2)
+        let full = try XCTUnwrap(chunks.first)
+        XCTAssertEqual(full.duration, 900, accuracy: 0.2)
+        let size = try XCTUnwrap(try FileManager.default.attributesOfItem(atPath: full.url.path)[.size] as? NSNumber).intValue
+        XCTAssertLessThan(size, 10 * 1024 * 1024, "64 kbps for 15 minutes is about 7.2 MB")
+        XCTAssertLessThan(size, 64 * 1024 * 1024, "worker MAX_AUDIO")
+        let file = try AVAudioFile(forReading: full.url)
+        XCTAssertEqual(Double(file.length) / file.fileFormat.sampleRate, 900, accuracy: 0.2)
+        try RecorderEvidence.keep([full.url], test: "Offline" + #function)
+    }
+}
+
+private enum ChunkRotationDefaults {
+    /// Android `CaptureService.CHUNK_MS`, the recorder's default chunk length.
+    static let seconds: TimeInterval = 15 * 60
 }
