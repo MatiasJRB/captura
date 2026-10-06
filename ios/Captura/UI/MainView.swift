@@ -142,8 +142,8 @@ private struct RecorderStatusCard: View {
                 switch recorder.state {
                 case .interrupted:
                     card(
-                        title: "Pausado por una llamada",
-                        detail: "O por otra app que usa el micrófono. Mientras tanto no se graba; sigue sola al terminar o tocá Reanudar.",
+                        title: RecorderMessages.interruptedTitle,
+                        detail: RecorderMessages.interruptedDetail,
                         color: Theme.error
                     )
                 case .failed(let message):

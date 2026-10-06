@@ -62,5 +62,10 @@ enum RecorderMessages {
     static let writeFailed = "No se pudo guardar el audio. Revisá el espacio libre y volvé a tocar Grabar."
     static let resumeFailed = "La grabación quedó interrumpida. Tocá Grabar para seguir."
     static let restartFailed = "Se perdió el micrófono. Tocá Grabar para seguir."
+    /// The interrupted card. iOS may not let the recording continue by itself (an
+    /// interruption can end without "should resume", or end while the app is
+    /// suspended), so it must not promise that it will.
+    static let interruptedTitle = "En pausa · no se está grabando"
+    static let interruptedDetail = "Una llamada, Siri u otra app interrumpió el audio. A veces sigue sola al terminar, pero no siempre: si no ves «Grabando», tocá Reanudar."
     static let lowStorage = "La grabación se detuvo porque queda poco espacio en el iPhone. Lo grabado quedó guardado; liberá espacio y volvé a tocar Grabar."
 }

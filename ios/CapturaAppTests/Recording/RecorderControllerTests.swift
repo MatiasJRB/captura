@@ -415,6 +415,21 @@ final class RecorderControllerTests: XCTestCase {
         XCTAssertEqual(session.activateCount, 1)
     }
 
+    func testInterruptedCardNeverPromisesToContinueByItself() async throws {
+        // An interruption that ends without "should resume" stays interrupted until the
+        // person acts, so the card must say so instead of promising it continues.
+        let controller = try await recording()
+        engine.emit(seconds: 0.5)
+        postInterruptionBegan()
+        postInterruptionEnded(shouldResume: false)
+        post(UIApplication.didBecomeActiveNotification)
+        await controller.drainPendingWrites()
+        XCTAssertEqual(controller.state, .interrupted)
+        XCTAssertTrue(RecorderMessages.interruptedTitle.contains("no se está grabando"))
+        XCTAssertTrue(RecorderMessages.interruptedDetail.contains("no siempre"))
+        XCTAssertTrue(RecorderMessages.interruptedDetail.contains("Reanudar"))
+    }
+
     func testUserCanRestartFromInterrupted() async throws {
         let controller = try await recording()
         postInterruptionBegan()
