@@ -45,6 +45,7 @@ final class AppModel {
     @ObservationIgnored private let sync: SyncService?
     @ObservationIgnored private let networkMonitor: NetworkConditionsProviding
     @ObservationIgnored private let background: BackgroundExecution
+    @ObservationIgnored private let notices: PauseNotifying
     @ObservationIgnored private let isAppInForeground: @MainActor () -> Bool
     @ObservationIgnored private let now: @Sendable () -> Date
 
@@ -62,6 +63,17 @@ final class AppModel {
     @ObservationIgnored private var pendingIntentStartAt: Date?
     @ObservationIgnored private var lastStopReason: SyncSummary.StopReason?
 
+    // MARK: - Pause notices
+
+    /// Set from the person's choice each time recording starts; off until then.
+    @ObservationIgnored private var noticesAllowed = false
+    /// Why the recording is paused, until it continues or the person starts or stops.
+    @ObservationIgnored private var pendingPause: RecorderPauseReason?
+    /// The reason of the notice in Notification Center: one alert per reason and pause.
+    @ObservationIgnored private var postedPause: RecorderPauseReason?
+    /// Reading (and, the first time, asking for) notice permission after a start.
+    @ObservationIgnored private(set) var noticePermissionTask: Task<Void, Never>?
+
     init(
         recorder: RecorderController,
         auth: GoogleSignInController,
@@ -71,6 +83,7 @@ final class AppModel {
         sync: SyncService?,
         network: NetworkConditionsProviding,
         background: BackgroundExecution,
+        notices: PauseNotifying,
         isAppInForeground: @escaping @MainActor () -> Bool = { UIApplication.shared.applicationState != .background },
         now: @escaping @Sendable () -> Date = { Date() }
     ) {
@@ -82,6 +95,7 @@ final class AppModel {
         self.sync = sync
         self.networkMonitor = network
         self.background = background
+        self.notices = notices
         self.isAppInForeground = isAppInForeground
         self.now = now
         self.network = network.latest
@@ -94,6 +108,7 @@ final class AppModel {
         }
 
         recorder.onChunkClosed = { [weak self] url in self?.chunkClosed(url) }
+        recorder.onPauseEvent = { [weak self] event in self?.recorderPauseChanged(event) }
         network.setChangeHandler { [weak self] conditions in self?.networkChanged(conditions) }
     }
 
@@ -124,6 +139,9 @@ final class AppModel {
     /// resume pending work (Android re-schedules its jobs the same way).
     func sceneBecameActive() async {
         isInBackground = false
+        // The screen shows the recorder state now (also clears a notice left by a
+        // previous run of the app).
+        withdrawPauseNotice()
         updateBackgroundAssertion()
         recorder.refreshPermission()
         network = await networkMonitor.current()
@@ -143,6 +161,11 @@ final class AppModel {
 
     func sceneEnteredBackground() {
         isInBackground = true
+        if recorder.state == .interrupted {
+            // Paused while on screen (often the call that just took the screen): the
+            // card is not visible any more, so the notice says it.
+            postPauseNotice(pendingPause ?? .interrupted)
+        }
         updateBackgroundAssertion()
         scheduleBackgroundSyncIfNeeded()
     }
@@ -189,6 +212,9 @@ final class AppModel {
         do {
             try await recorder.start()
             recorderMessage = nil
+            pendingPause = nil
+            withdrawPauseNotice()
+            refreshNoticePermission()
         } catch {
             recorderMessage = (error as? LocalizedError)?.errorDescription
                 ?? "No se pudo iniciar la grabación. Probá de nuevo."
@@ -200,6 +226,8 @@ final class AppModel {
     func stopRecording() async -> Bool {
         let wasActive = recorder.state.phase == .recording || recorder.state.phase == .interrupted
         let closed = await recorder.stop()
+        pendingPause = nil
+        withdrawPauseNotice()
         if let closed { await enqueue(closed) }
         await refreshLibrary()
         requestSync()
@@ -251,6 +279,49 @@ final class AppModel {
         await stopRecording()
     }
     #endif
+
+    // MARK: - Pause notices
+
+    /// After the microphone permission (the recording already started), never at launch:
+    /// asks for notice permission the first time, then only reads the person's choice,
+    /// which may have changed in Ajustes. A denial changes nothing else.
+    private func refreshNoticePermission() {
+        let notices = self.notices
+        noticePermissionTask = Task { [weak self] in
+            var permission = await notices.permission()
+            if permission == .undetermined {
+                permission = await notices.requestPermission()
+            }
+            self?.noticesAllowed = permission == .allowed
+        }
+    }
+
+    /// Recording paused, stopped or continued without the person asking. On screen the
+    /// status card says it; otherwise a local notification does. It is posted right
+    /// away: once the microphone is gone, iOS may suspend the app at any moment.
+    private func recorderPauseChanged(_ event: RecorderPauseEvent) {
+        switch event {
+        case .paused(let reason):
+            pendingPause = reason
+            if isInBackground || !isAppInForeground() {
+                postPauseNotice(reason)
+            }
+        case .continued:
+            pendingPause = nil
+            withdrawPauseNotice()
+        }
+    }
+
+    private func postPauseNotice(_ reason: RecorderPauseReason) {
+        guard noticesAllowed, postedPause != reason else { return }
+        postedPause = reason
+        notices.post(PauseNotice(reason))
+    }
+
+    private func withdrawPauseNotice() {
+        postedPause = nil
+        notices.withdraw()
+    }
 
     // MARK: - Drive link
 

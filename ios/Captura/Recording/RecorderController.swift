@@ -27,6 +27,10 @@ final class RecorderController {
 
     /// Called on the main actor after a chunk was closed and renamed to its final name.
     @ObservationIgnored var onChunkClosed: ((URL) -> Void)?
+    /// Called on the main actor, after `state` changed, when recording pauses or stops
+    /// without the person asking (interruption, lost input, failure, low storage) and
+    /// when it continues by itself afterwards. `start()` and `stop()` never call it.
+    @ObservationIgnored var onPauseEvent: ((RecorderPauseEvent) -> Void)?
 
     let directory: URL
     let chunkDuration: TimeInterval
@@ -213,9 +217,12 @@ final class RecorderController {
         }
         switch RecorderPolicy.reaction(to: event, phase: state.phase, resumePending: resumePending) {
         case .ignore:
-            break
+            if case .interruptionEnded(shouldResume: false) = event, state.phase == .interrupted {
+                // iOS did not allow continuing: only the person can restart the recording.
+                onPauseEvent?(.paused(.waitingForTheApp))
+            }
         case .suspend:
-            suspend()
+            suspend(reason: event == .interruptionBegan ? .interrupted : .inputLost)
         case .resumeInNewChunk:
             resume()
         case .restartInNewChunk:
@@ -271,6 +278,7 @@ final class RecorderController {
             resumePending = false
             stopEngineAndSession()
             state = .failed(message: message)
+            onPauseEvent?(.paused(message == RecorderMessages.lowStorage ? .lowStorage : .writeFailed))
         }
     }
 
@@ -310,13 +318,14 @@ final class RecorderController {
     }
 
     /// Interruption began or the input disappeared: close the chunk, keep the intent.
-    private func suspend() {
+    private func suspend(reason: RecorderPauseReason) {
         engine?.stop()
         // The system already deactivated the session for an interruption.
         sessionActive = false
         resumePending = false
         state = .interrupted
         writer.finish { _ in }
+        onPauseEvent?(.paused(reason))
     }
 
     private func resume() {
@@ -326,6 +335,7 @@ final class RecorderController {
             resumePending = false
             let resumedAt = now()
             state = .recording(startedAt: sessionStartedAt ?? resumedAt, chunkStartedAt: resumedAt)
+            onPauseEvent?(.continued)
         } catch {
             stopEngineAndSession()
             if isAppInForeground() {
@@ -336,6 +346,7 @@ final class RecorderController {
                 // and resume when the user brings the app back to the foreground.
                 resumePending = true
             }
+            onPauseEvent?(.paused(.waitingForTheApp))
         }
     }
 
@@ -353,9 +364,11 @@ final class RecorderController {
             stopEngineAndSession()
             if session.isInputAvailable {
                 state = .failed(message: RecorderMessages.restartFailed)
+                onPauseEvent?(.paused(.microphoneLost))
             } else {
                 resumePending = false
                 state = .interrupted
+                onPauseEvent?(.paused(.inputLost))
             }
         }
     }

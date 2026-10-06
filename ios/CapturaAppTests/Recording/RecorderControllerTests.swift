@@ -16,6 +16,7 @@ final class RecorderControllerTests: XCTestCase {
     private var foreground = true
     private var engineStartError: Error?
     private var closedReports: [URL] = []
+    private var pauseEvents: [RecorderPauseEvent] = []
     private var freeSpace: FreeSpaceBox!
 
     override func setUp() async throws {
@@ -29,6 +30,7 @@ final class RecorderControllerTests: XCTestCase {
         foreground = true
         engineStartError = nil
         closedReports = []
+        pauseEvents = []
         freeSpace = FreeSpaceBox(10_000_000_000)
     }
 
@@ -57,6 +59,7 @@ final class RecorderControllerTests: XCTestCase {
             freeSpace: { [freeSpace] in freeSpace?.bytes }
         )
         controller.onChunkClosed = { [unowned self] in self.closedReports.append($0) }
+        controller.onPauseEvent = { [unowned self] in self.pauseEvents.append($0) }
         return controller
     }
 
@@ -550,6 +553,106 @@ final class RecorderControllerTests: XCTestCase {
         XCTAssertEqual(session.activateCount, 1)
         XCTAssertEqual(closedReports.count, 1)
         XCTAssertTrue(controller.state.isRecording)
+    }
+
+    // MARK: - Pause events (what the app tells the person while off screen)
+
+    func testStartAndStopReportNoPauseEvents() async throws {
+        let controller = try await recording()
+        engine.emit(seconds: 0.5)
+        await controller.stop()
+        await controller.drainPendingWrites()
+        XCTAssertEqual(pauseEvents, [])
+    }
+
+    func testInterruptionReportsAPauseAndItsContinuation() async throws {
+        let controller = try await recording()
+        postInterruptionBegan()
+        XCTAssertEqual(pauseEvents, [.paused(.interrupted)])
+        postInterruptionEnded(shouldResume: true)
+        XCTAssertTrue(controller.state.isRecording)
+        XCTAssertEqual(pauseEvents, [.paused(.interrupted), .continued])
+    }
+
+    func testInterruptionEndWithoutResumeReportsThatTheAppIsNeeded() async throws {
+        let controller = try await recording()
+        postInterruptionBegan()
+        postInterruptionEnded(shouldResume: false)
+        XCTAssertEqual(controller.state, .interrupted)
+        XCTAssertEqual(pauseEvents, [.paused(.interrupted), .paused(.waitingForTheApp)])
+    }
+
+    func testResumeRefusedInBackgroundReportsThatTheAppIsNeeded() async throws {
+        let controller = try await recording()
+        postInterruptionBegan()
+        foreground = false
+        session.activationError = FakeRecordingSession.Failure()
+        postInterruptionEnded(shouldResume: true)
+        XCTAssertEqual(pauseEvents, [.paused(.interrupted), .paused(.waitingForTheApp)])
+
+        foreground = true
+        session.activationError = nil
+        post(UIApplication.didBecomeActiveNotification)
+        XCTAssertTrue(controller.state.isRecording)
+        XCTAssertEqual(pauseEvents.last, .continued)
+    }
+
+    func testInterruptionEndAfterStopReportsNothing() async throws {
+        let controller = try await recording()
+        await controller.stop()
+        postInterruptionBegan()
+        postInterruptionEnded(shouldResume: false)
+        XCTAssertEqual(pauseEvents, [])
+    }
+
+    func testLostInputWithoutAnyInputReportsInputLost() async throws {
+        let controller = try await recording()
+        session.isInputAvailable = false
+        postRouteChange(.oldDeviceUnavailable)
+        XCTAssertEqual(controller.state, .interrupted)
+        XCTAssertEqual(pauseEvents, [.paused(.inputLost)])
+    }
+
+    func testRouteRestartReportsNothingWhenRecordingContinues() async throws {
+        let controller = try await recording()
+        postRouteChange(.oldDeviceUnavailable)
+        XCTAssertTrue(controller.state.isRecording)
+        XCTAssertEqual(pauseEvents, [])
+    }
+
+    func testRouteRestartThatFailsReportsMicrophoneLost() async throws {
+        let controller = try await recording()
+        engine.startError = FakeAudioCaptureEngine.Failure()
+        postRouteChange(.oldDeviceUnavailable)
+        XCTAssertEqual(controller.state, .failed(message: RecorderMessages.restartFailed))
+        XCTAssertEqual(pauseEvents, [.paused(.microphoneLost)])
+    }
+
+    func testMediaResetThatCannotRestartReportsMicrophoneLost() async throws {
+        let controller = try await recording()
+        engineStartError = FakeAudioCaptureEngine.Failure()
+        post(AVAudioSession.mediaServicesWereResetNotification)
+        XCTAssertEqual(controller.state, .failed(message: RecorderMessages.restartFailed))
+        XCTAssertEqual(pauseEvents, [.paused(.microphoneLost)])
+    }
+
+    func testWriteFailureReportsWriteFailed() async throws {
+        let controller = try await recording()
+        factory.behavior.failWrites = true
+        engine.emit(seconds: 0.1)
+        await controller.drainPendingWrites()
+        XCTAssertEqual(pauseEvents, [.paused(.writeFailed)])
+    }
+
+    func testLowStorageStopReportsLowStorage() async throws {
+        let controller = try await recording(chunkDuration: 900)
+        engine.emit(seconds: 1)
+        await controller.drainPendingWrites()
+        freeSpace.bytes = 60_000_000
+        engine.emit(seconds: RecordingSpace.checkInterval + 1)
+        await controller.drainPendingWrites()
+        XCTAssertEqual(controller.state, .failed(message: RecorderMessages.lowStorage))
+        XCTAssertEqual(pauseEvents, [.paused(.lowStorage)])
     }
 
     // MARK: - Launch recovery and queries

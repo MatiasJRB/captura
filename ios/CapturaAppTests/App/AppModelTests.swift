@@ -489,7 +489,7 @@ final class AppModelTests: XCTestCase {
         AppModel(
             recorder: h.recorder, auth: h.auth, settingsStore: h.settings, queue: h.queue,
             sync: FakeSyncService(), network: h.network, background: h.background,
-            isAppInForeground: foreground, now: { h.clock.now() }
+            notices: h.notices, isAppInForeground: foreground, now: { h.clock.now() }
         )
     }
 

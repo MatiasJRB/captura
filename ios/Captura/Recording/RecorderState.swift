@@ -24,6 +24,30 @@ enum RecorderState: Equatable, Sendable {
     var isRecording: Bool { phase == .recording }
 }
 
+/// Why recording paused or stopped although the person did not ask for it.
+enum RecorderPauseReason: Equatable, Sendable {
+    /// A call, Siri or another app took the audio. It may continue by itself.
+    case interrupted
+    /// The interruption is over (or iOS refused to restart the microphone in the
+    /// background): the recording cannot continue until the person opens the app.
+    case waitingForTheApp
+    /// The input in use disappeared and there is no other input.
+    case inputLost
+    /// Capture could not restart on the current route (route change, audio reset).
+    case microphoneLost
+    /// Stopped before the disk filled up; what was recorded is kept.
+    case lowStorage
+    case writeFailed
+}
+
+/// Recording changes the person did not ask for. The app tells the person about them
+/// while Captura is not on screen, where the status card cannot be seen.
+enum RecorderPauseEvent: Equatable, Sendable {
+    case paused(RecorderPauseReason)
+    /// The recording continued by itself after a pause.
+    case continued
+}
+
 /// Microphone permission as the UI needs it: `.denied` means "send the user to Ajustes".
 enum MicrophonePermission: Equatable, Sendable {
     case undetermined

@@ -65,7 +65,8 @@ extension AppModel {
             queueUnavailableMessage: queueMessage,
             sync: sync,
             network: network,
-            background: SystemBackgroundExecution()
+            background: SystemBackgroundExecution(),
+            notices: SystemPauseNotifier()
         )
     }
 

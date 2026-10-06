@@ -116,6 +116,48 @@ final class FakeBackgroundExecution: BackgroundExecution {
     }
 }
 
+/// Records pause notices instead of showing them. `delivered` is what Notification
+/// Center would hold (one notice, replaced by each post).
+@MainActor
+final class FakePauseNotifier: PauseNotifying {
+    /// The person's choice so far; `requestPermission()` replaces it with `answer`.
+    var current: NoticePermission = .undetermined
+    var answer: NoticePermission = .allowed
+    /// Runs when the system prompt would appear.
+    var onPrompt: (() -> Void)?
+    private(set) var permissionReads = 0
+    private(set) var prompts = 0
+    private(set) var posted: [PauseNotice] = []
+    private(set) var delivered: PauseNotice?
+
+    func permission() async -> NoticePermission {
+        permissionReads += 1
+        return current
+    }
+
+    func requestPermission() async -> NoticePermission {
+        prompts += 1
+        onPrompt?()
+        current = answer
+        return answer
+    }
+
+    func post(_ notice: PauseNotice) {
+        posted.append(notice)
+        delivered = notice
+    }
+
+    func withdraw() {
+        delivered = nil
+    }
+}
+
+/// Whether the app is on screen, as the test sets it.
+@MainActor
+final class ForegroundState {
+    var isForeground = true
+}
+
 /// A sync service that blocks inside `run` until the test releases it.
 final class BlockingSyncService: SyncService, @unchecked Sendable {
     private let lock = NSLock()
@@ -169,6 +211,9 @@ final class AppModelHarness {
     let files: FakeChunkFileFactory
     let network: FakeNetwork
     let background: FakeBackgroundExecution
+    let notices: FakePauseNotifier
+    /// Drives `isAppInForeground` of both the recorder and the model.
+    let appState: ForegroundState
     let clock: TestClock
     let tokenStore: InMemoryTokenStore
     let authTransport: AppAuthStubTransport
@@ -201,6 +246,8 @@ final class AppModelHarness {
         let files = FakeChunkFileFactory()
         let network = FakeNetwork(conditions)
         let background = FakeBackgroundExecution()
+        let notices = FakePauseNotifier()
+        let appState = ForegroundState()
         let tokenStore = InMemoryTokenStore(linked ? GoogleCredential(refreshToken: "fixture-refresh", accountEmail: AppAuthFixtures.email) : nil)
         let authTransport = AppAuthStubTransport(authResponses)
         let settings = SyncSettingsStore(directory: syncDirectory)
@@ -226,7 +273,7 @@ final class AppModelHarness {
             },
             fileFactory: files,
             notificationCenter: NotificationCenter(),
-            isAppInForeground: { true },
+            isAppInForeground: { appState.isForeground },
             now: { clock.now() }
         )
         let queue = try UploadQueue(storeDirectory: syncDirectory, capturesRoot: recordings)
@@ -238,7 +285,8 @@ final class AppModelHarness {
             sync: makeSync?(queue, settings, auth) ?? sync ?? FakeSyncService(),
             network: network,
             background: background,
-            isAppInForeground: { true },
+            notices: notices,
+            isAppInForeground: { appState.isForeground },
             now: { clock.now() }
         )
         self.root = root
@@ -247,6 +295,8 @@ final class AppModelHarness {
         self.files = files
         self.network = network
         self.background = background
+        self.notices = notices
+        self.appState = appState
         self.clock = clock
         self.tokenStore = tokenStore
         self.authTransport = authTransport
