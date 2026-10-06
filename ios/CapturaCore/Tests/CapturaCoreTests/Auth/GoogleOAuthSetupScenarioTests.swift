@@ -72,12 +72,12 @@ final class GoogleOAuthSetupScenarioTests: XCTestCase {
 
     // MARK: Step by step
 
-    func testFreshCloneSaysWhichFileToCreate() throws {
+    func testFreshCloneSaysWhichScriptToRun() throws {
         let info = try infoDictionary(try buildSettings(local: nil))
         let result = GoogleOAuthConfiguration.load(infoDictionary: info)
         XCTAssertEqual(result, .failure(.missingClientID))
         if case .failure(let error) = result {
-            XCTAssertTrue(error.userMessage.contains("Captura.local.example.xcconfig"))
+            XCTAssertTrue(error.userMessage.contains("python3 ios/scripts/configure.py"))
         }
     }
 

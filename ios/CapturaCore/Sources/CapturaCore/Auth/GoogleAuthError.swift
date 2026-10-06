@@ -55,7 +55,7 @@ public enum GoogleAuthError: Error, Equatable, Sendable {
         case .invalidGrant, .reauthenticationRequired:
             return "Google pidió volver a vincular la cuenta. Tocá «Vincular Drive»."
         case .tokenRequestFailed(_, let error) where error == "invalid_client" || error == "unauthorized_client":
-            return "Google no reconoce el ID de cliente. Revisá \(GoogleOAuthConfiguration.BuildSetting.clientID) en \(GoogleOAuthConfiguration.BuildSetting.file)."
+            return "Google no reconoce el ID de cliente (\(GoogleOAuthConfiguration.BuildSetting.clientID)). Pedí el ID del cliente iOS actual, corré \(GoogleOAuthConfiguration.BuildSetting.setupCommand) --force en la Mac (\(GoogleOAuthConfiguration.BuildSetting.setupStep)) y volvé a instalar la app."
         case .tokenRequestFailed:
             return "Google respondió con un error. Volvé a intentar en unos minutos."
         case .malformedTokenResponse:

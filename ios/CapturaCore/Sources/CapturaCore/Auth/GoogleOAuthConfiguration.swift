@@ -20,6 +20,9 @@ public struct GoogleOAuthConfiguration: Equatable, Sendable {
     /// Build-setting names shown to the person in configuration messages.
     public enum BuildSetting {
         public static let file = "ios/Config/Captura.local.xcconfig"
+        /// What the person runs on the Mac to write `file` (docs/ios.md, step 4).
+        public static let setupCommand = "python3 ios/scripts/configure.py"
+        public static let setupStep = "docs/ios.md, paso 4"
         public static let clientID = "CAPTURA_GOOGLE_IOS_CLIENT_ID"
         public static let reversedClientID = "CAPTURA_GOOGLE_REVERSED_CLIENT_ID"
         public static let hostedDomain = "CAPTURA_GOOGLE_HOSTED_DOMAIN"
@@ -144,21 +147,24 @@ public enum GoogleOAuthConfigurationError: Error, Equatable, Sendable {
     case placeholderHostedDomain
     case malformedHostedDomain(String)
 
+    /// Every case points to `configure.py`, which validates the values and derives the
+    /// URL scheme, instead of asking the person to edit the settings file by hand.
     public var userMessage: String {
         typealias Setting = GoogleOAuthConfiguration.BuildSetting
+        let rerun = "En la Mac, corré \(Setting.setupCommand) --force (\(Setting.setupStep)) y volvé a instalar la app desde Xcode."
         switch self {
         case .missingClientID:
-            return "Falta configurar Google: copiá ios/Config/Captura.local.example.xcconfig como Captura.local.xcconfig y completá \(Setting.clientID) con el ID de cliente iOS de tu proyecto de Google Cloud."
+            return "Falta configurar Google: en la Mac, corré \(Setting.setupCommand) (\(Setting.setupStep)) y volvé a instalar la app desde Xcode."
         case .placeholderClientID:
-            return "Falta configurar Google: \(Setting.clientID) en \(Setting.file) todavía tiene el valor de ejemplo. Pegá el ID de cliente iOS de tu proyecto de Google Cloud."
+            return "Falta configurar Google: \(Setting.clientID) todavía tiene el valor de ejemplo. Usá el ID de cliente iOS de tu proyecto de Google Cloud. \(rerun)"
         case .malformedClientID:
-            return "El valor de \(Setting.clientID) no parece un ID de cliente de Google: tiene que terminar en .apps.googleusercontent.com. Copialo del cliente OAuth de tipo iOS."
+            return "El valor de \(Setting.clientID) no parece un ID de cliente de Google: tiene que terminar en .apps.googleusercontent.com. Usá el del cliente OAuth de tipo iOS. \(rerun)"
         case .reversedClientIDMismatch(let expected):
-            return "\(Setting.reversedClientID) no corresponde al ID de cliente. Dejalo vacío o poné exactamente: \(expected)"
+            return "\(Setting.reversedClientID) no corresponde al ID de cliente. \(rerun) El valor correcto es: \(expected)"
         case .placeholderHostedDomain:
-            return "\(Setting.hostedDomain) tiene un dominio de ejemplo. Dejalo vacío o poné el dominio de tu Google Workspace."
+            return "\(Setting.hostedDomain) tiene un dominio de ejemplo. Dejalo afuera o usá el dominio de tu Google Workspace. \(rerun)"
         case .malformedHostedDomain:
-            return "\(Setting.hostedDomain) tiene que ser solo el dominio de Google Workspace (por ejemplo, tuempresa.com), sin @ ni https://."
+            return "\(Setting.hostedDomain) tiene que ser solo el dominio de Google Workspace (por ejemplo, tuempresa.com), sin @ ni https://. \(rerun)"
         }
     }
 }

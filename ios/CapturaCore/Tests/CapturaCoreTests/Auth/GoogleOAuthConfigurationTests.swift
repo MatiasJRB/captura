@@ -185,11 +185,24 @@ final class GoogleOAuthConfigurationTests: XCTestCase {
 
     // MARK: Messages
 
-    func testMissingClientIDMessageNamesFileAndSetting() {
+    func testMissingClientIDMessagePointsToTheSetupScript() {
+        // The docs set the app up with configure.py, never by copying files by hand.
         let message = GoogleOAuthConfigurationError.missingClientID.userMessage
         XCTAssertTrue(message.hasPrefix("Falta configurar Google"))
-        XCTAssertTrue(message.contains("Captura.local.xcconfig"))
-        XCTAssertTrue(message.contains("CAPTURA_GOOGLE_IOS_CLIENT_ID"))
+        XCTAssertTrue(message.contains("python3 ios/scripts/configure.py"))
+        XCTAssertTrue(message.contains("docs/ios.md, paso 4"))
+        XCTAssertFalse(message.contains("example"))
+    }
+
+    func testEveryConfigurationMessagePointsToTheSetupScript() {
+        let errors: [GoogleOAuthConfigurationError] = [
+            .missingClientID, .placeholderClientID, .malformedClientID("x"),
+            .reversedClientIDMismatch(expected: AuthFixtures.reversedClientID),
+            .placeholderHostedDomain, .malformedHostedDomain("x"),
+        ]
+        for error in errors {
+            XCTAssertTrue(error.userMessage.contains("python3 ios/scripts/configure.py"), "\(error)")
+        }
     }
 
     func testPlaceholderClientIDMessageSaysItIsStillTheExample() {

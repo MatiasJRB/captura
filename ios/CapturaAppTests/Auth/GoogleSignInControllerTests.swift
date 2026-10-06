@@ -274,7 +274,7 @@ final class GoogleAuthBuildConfigurationTests: XCTestCase {
         guard case .failure(let error) = try builtConfiguration() else {
             throw XCTSkip("This build has a Google client configured.")
         }
-        XCTAssertTrue(error.userMessage.contains("CAPTURA_GOOGLE"), error.userMessage)
+        XCTAssertTrue(error.userMessage.contains("ios/scripts/configure.py"), error.userMessage)
         let controller = GoogleSignInController(store: InMemoryTokenStore(), transport: AppAuthStubTransport())
         XCTAssertEqual(controller.status, .notConfigured(message: error.userMessage))
     }
