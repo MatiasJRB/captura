@@ -106,6 +106,14 @@ class Sandbox(unittest.TestCase):
             text = text.replace('MARKETING_VERSION = 0.1.0;', 'MARKETING_VERSION = 0.2.0;', 1)
         path.write_text(text)
 
+    def xcode_stamps_upgrade(self):
+        """What a newer Xcode writes when it opens the project or applies recommended settings."""
+        path = self.repo / PROJECT
+        text = path.read_text()
+        self.assertIn('LastUpgradeCheck = 2610;', text)
+        path.write_text(text.replace('LastUpgradeCheck = 2610;', 'LastUpgradeCheck = 2700;')
+                        .replace('LastSwiftUpdateCheck = 2610;', 'LastSwiftUpdateCheck = 2700;'))
+
     def project_is_clean(self):
         return self.git('status', '--porcelain', '--', PROJECT) == ''
 
@@ -160,17 +168,56 @@ class ConfigureTests(Sandbox):
         again = self.configure('--bundle-id', 'org.fictional.other', '--google-client-id', CLIENT)
         self.assertEqual(again.returncode, 1)
         self.assertIn('--force', again.stderr)
+        # Its own prefix: the docs tell "Not changed" (a wrong value) apart from this case.
+        self.assertTrue(again.stderr.startswith('Already configured:'), again.stderr)
+        self.assertNotIn('Not changed', again.stderr)
         self.assertEqual((self.repo / LOCAL).read_text(), before)
         forced = self.configure('--bundle-id', 'org.fictional.other', '--google-client-id', CLIENT,
                                 '--team', TEAM, '--force')
         self.assertEqual(forced.returncode, 0, forced.stderr)
         self.assertEqual(self.local()['CAPTURA_BUNDLE_ID'], 'org.fictional.other')
 
+    def test_force_keeps_the_team_saved_earlier_when_xcode_lists_none(self):
+        self.assertEqual(self.configure('--bundle-id', BUNDLE, '--google-client-id', CLIENT,
+                                        '--team', TEAM).returncode, 0)
+        forced = self.configure('--bundle-id', 'org.fictional.other', '--google-client-id', CLIENT,
+                                '--force')
+        self.assertEqual(forced.returncode, 0, forced.stderr)
+        self.assertEqual(self.local()['CAPTURA_DEVELOPMENT_TEAM'], TEAM)
+        self.assertEqual(self.local()['CAPTURA_BUNDLE_ID'], 'org.fictional.other')
+        self.assertIn(f'Kept the Apple team saved earlier: {TEAM}', forced.stdout)
+        self.assertNotIn('No Apple team found', forced.stdout + forced.stderr)
+
+    def test_force_keeps_the_saved_team_over_a_detected_one_unless_team_is_given(self):
+        self.configure('--bundle-id', BUNDLE, '--google-client-id', CLIENT, '--team', OTHER_TEAM)
+        self.tools(teams=personal_teams(TEAM))
+        self.configure('--bundle-id', BUNDLE, '--google-client-id', CLIENT, '--force')
+        self.assertEqual(self.local()['CAPTURA_DEVELOPMENT_TEAM'], OTHER_TEAM)
+        replaced = self.configure('--bundle-id', BUNDLE, '--google-client-id', CLIENT, '--force',
+                                  '--team', TEAM)
+        self.assertEqual(replaced.returncode, 0, replaced.stderr)
+        self.assertEqual(self.local()['CAPTURA_DEVELOPMENT_TEAM'], TEAM)
+
+    def test_bare_force_keeps_the_saved_team_when_xcode_lists_none(self):
+        self.configure('--bundle-id', BUNDLE, '--google-client-id', CLIENT, '--team', TEAM)
+        result = self.configure('--force')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.local()['CAPTURA_DEVELOPMENT_TEAM'], TEAM)
+        self.assertIn(f'Kept the Apple team saved earlier: {TEAM}', result.stdout)
+
+    def test_bundle_id_is_saved_in_lowercase(self):
+        result = self.configure('--bundle-id', 'Org.Fictional.Captura', '--google-client-id', CLIENT,
+                                '--team', TEAM)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.local()['CAPTURA_BUNDLE_ID'], BUNDLE)
+        self.assertIn(f'lowercase: {BUNDLE}', result.stdout)
+
     def test_without_teams_it_writes_the_rest_and_explains_apple_accounts(self):
         result = self.configure('--bundle-id', BUNDLE, '--google-client-id', CLIENT)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(self.local()['CAPTURA_DEVELOPMENT_TEAM'], '')
         self.assertIn('Xcode > Settings > Apple Accounts', result.stdout)
+        self.assertIn('step 6', result.stdout)
         later = self.configure()
         self.assertEqual(later.returncode, 1)
         self.tools(teams=personal_teams(TEAM))
@@ -205,12 +252,23 @@ class ConfigureTests(Sandbox):
         self.assertEqual(self.local()['CAPTURA_DEVELOPMENT_TEAM'], TEAM)
         self.assertTrue(self.project_is_clean())
 
+    def test_adopt_also_undoes_xcode_upgrade_stamps(self):
+        self.configure('--bundle-id', BUNDLE, '--google-client-id', CLIENT)
+        self.xcode_picks_team()
+        self.xcode_stamps_upgrade()
+        result = self.configure('--adopt-xcode-team')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.local()['CAPTURA_DEVELOPMENT_TEAM'], TEAM)
+        self.assertTrue(self.project_is_clean())
+
     def test_adopt_refuses_other_project_changes_and_keeps_them(self):
         self.configure('--bundle-id', BUNDLE, '--google-client-id', CLIENT)
         self.xcode_picks_team(extra_change=True)
         result = self.configure('--adopt-xcode-team')
         self.assertEqual(result.returncode, 1)
         self.assertIn('MARKETING_VERSION', result.stderr)
+        self.assertIn(f'git checkout -- {PROJECT}', result.stderr)
+        self.assertIn('Update to recommended settings', result.stderr)
         self.assertIn(f'--team {TEAM}', result.stderr)
         self.assertFalse(self.project_is_clean())
         self.assertEqual(self.local()['CAPTURA_DEVELOPMENT_TEAM'], '')
@@ -290,7 +348,7 @@ class CheckTests(Sandbox):
                 mock.patch.object(check.platform, 'machine', return_value='arm64'), \
                 mock.patch.object(check.platform, 'mac_ver', return_value=('26.6.2', ('', '', ''), 'arm64')), \
                 contextlib.redirect_stdout(out):
-            code = check.main()
+            code = check.main([])
         return code, out.getvalue()
 
     def configured(self, team=TEAM):
@@ -344,7 +402,7 @@ class CheckTests(Sandbox):
         out = io.StringIO()
         with mock.patch.dict(os.environ, self.env, clear=True), \
                 mock.patch.object(configure, 'ROOT', self.repo), contextlib.redirect_stdout(out):
-            code = check.main()
+            code = check.main([])
         self.assertEqual(code, 1)
         self.assertIn('FAIL  Xcode', out.getvalue())
 
@@ -360,6 +418,47 @@ class CheckTests(Sandbox):
         code, out = self.run_check(settings_team=TEAM)
         self.assertEqual(code, 1)
         self.assertIn('--adopt-xcode-team', out)
+
+    def test_no_team_anywhere_sends_you_on_to_step_6_instead_of_looping(self):
+        self.configured(team=None)
+        code, out = self.run_check(settings_team='')
+        self.assertEqual(code, 1)
+        self.assertIn('FAIL  Apple team: not set and no team found in Xcode', out)
+        self.assertIn('Only the Apple team is missing', out)
+        self.assertIn('step 6 of docs/ios.md (Open the project and check signing)', out)
+        self.assertNotIn('see "Apple team"', out)
+
+    def test_other_failures_keep_the_generic_summary(self):
+        self.configured(team=None)
+        code, out = self.run_check(settings_team='', sdks=False)
+        self.assertEqual(code, 1)
+        self.assertIn('2 problems block installing', out)
+        self.assertNotIn('Only the Apple team is missing', out)
+
+    def test_upgrade_stamps_in_the_project_are_a_warning_with_the_undo_command(self):
+        self.configured()
+        self.xcode_stamps_upgrade()
+        code, out = self.run_check()
+        self.assertEqual(code, 0, out)
+        self.assertIn('warn  Xcode project', out)
+        self.assertIn(f'git checkout -- {PROJECT}', out)
+
+    def test_capital_letters_in_the_bundle_id_are_blocking(self):
+        self.configured()
+        path = self.repo / LOCAL
+        path.write_text(path.read_text().replace(f'CAPTURA_BUNDLE_ID = {BUNDLE}',
+                                                 'CAPTURA_BUNDLE_ID = Org.Fictional.Captura'))
+        code, out = self.run_check(bundle='Org.Fictional.Captura')
+        self.assertEqual(code, 1)
+        self.assertIn(f'capital letters; use {BUNDLE}', out)
+
+    def test_help_explains_the_check_without_running_it(self):
+        result = subprocess.run([sys.executable, str(self.repo / 'ios/scripts/check.py'), '--help'],
+                                cwd=self.repo, env=self.env, capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('usage: python3 ios/scripts/check.py', result.stdout)
+        self.assertIn('Read-only', result.stdout)
+        self.assertNotIn('Captura iOS check', result.stdout)
 
     def test_missing_team_with_one_known_team_points_to_configure(self):
         self.configured(team=None)

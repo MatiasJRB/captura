@@ -39,17 +39,26 @@ PLACEHOLDER_TEAM = '$(CAPTURA_DEVELOPMENT_TEAM)'
 class ConfigError(Exception):
     """A value or state the person has to fix; the message says how."""
 
+    prefix = 'Not changed'
+
+
+class AlreadyConfigured(ConfigError):
+    """The settings file exists and the person did not ask to replace it."""
+
+    prefix = 'Already configured'
+
 
 def _clean(value):
     return (value or '').strip().strip('"\'').strip()
 
 
 def normalize_bundle_id(value):
-    bundle = _clean(value)
+    """Returns the bundle ID in lowercase, the form the docs and the Google client use."""
+    bundle = _clean(value).lower()
     if not bundle:
         raise ConfigError('The bundle ID is empty. Use something unique to you, '
                           'for example com.yourname.captura.')
-    if 'example' in bundle.lower():
+    if 'example' in bundle:
         raise ConfigError(f'"{bundle}" is the example bundle ID. Use one unique to you, '
                           'for example com.yourname.captura.')
     if (len(bundle) > 155 or '..' in bundle
@@ -228,10 +237,16 @@ def xcode_is_running():
     return result is not None and result.returncode == 0
 
 
+# Stamps Xcode writes when it opens the project or when someone accepts "Update to
+# recommended settings". Undoing them is harmless: Xcode only offers the update again.
+UPGRADE_STAMP = re.compile(r'(LastUpgradeCheck|LastSwiftUpdateCheck)\s*=\s*\d+;')
+
+
 def project_team(root):
     """Team that Xcode's Signing menu wrote into the tracked project file.
 
-    Returns (team, unexpected_lines, staged). Raises ConfigError when Git cannot tell.
+    Returns (team, unexpected_lines, staged, upgrade_lines). `upgrade_lines` are only
+    Xcode's upgrade-check stamps, safe to undo. Raises ConfigError when Git cannot tell.
     """
     staged = run(['git', 'diff', '--cached', '--quiet', '--', str(PROJECT)], cwd=root)
     diff = run(['git', 'diff', '--no-color', '--no-ext-diff', '-U0', '--', str(PROJECT)], cwd=root)
@@ -239,7 +254,7 @@ def project_team(root):
         raise ConfigError('Git could not compare the Xcode project with the downloaded version. '
                           'Run this from a folder created with "git clone", and pass the team '
                           'with --team instead.')
-    teams, unexpected = [], []
+    teams, unexpected, upgrade = [], [], []
     for line in diff.stdout.decode('utf-8', errors='replace').splitlines():
         if not line or line[0] not in '+-' or line.startswith(('+++', '---')):
             continue
@@ -252,12 +267,15 @@ def project_team(root):
             continue
         if re.fullmatch(r'ProvisioningStyle\s*=\s*\w+;', body) and line.startswith('+'):
             continue
+        if UPGRADE_STAMP.fullmatch(body):
+            upgrade.append(line)
+            continue
         unexpected.append(line)
     found = sorted(set(teams))
     if len(found) > 1:
         raise ConfigError('Xcode wrote more than one team into the project (' + ', '.join(found) +
                           '). Pick one and pass it with --team.')
-    return (found[0] if found else None), unexpected, staged.returncode == 1
+    return (found[0] if found else None), unexpected, staged.returncode == 1, upgrade
 
 
 def restore_project(root):
@@ -271,7 +289,7 @@ def adopt_from_project(root):
     if xcode_is_running():
         raise ConfigError('Xcode is open. Quit Xcode first (Xcode > Quit Xcode), so it cannot '
                           'write the team back into the project, then run this again.')
-    team, unexpected, staged = project_team(root)
+    team, unexpected, staged, _ = project_team(root)
     if staged:
         raise ConfigError(f'{PROJECT} has changes staged in Git. Unstage them first '
                           f'("git restore --staged {PROJECT}"), then run this again.')
@@ -288,9 +306,12 @@ def adopt_from_project(root):
         raise ConfigError(
             f'The project file has other changes besides the team ({team}), so it was not '
             f'restored automatically:\n    {shown}\n'
-            f'Look at them with: git diff {PROJECT}\n'
-            f'If you did not mean to make them, undo them with: git checkout -- {PROJECT}\n'
-            f'Then save the team with: {SCRIPT} --team {team}')
+            'They usually come from Xcode\'s "Update to recommended settings". Undo them '
+            '(this also takes the team out of the project file). Keep them only if you edited '
+            'the project on purpose:\n'
+            f'  git checkout -- {PROJECT}\n'
+            f'Then save the team in your settings:\n'
+            f'  {SCRIPT} --team {team}')
     return team
 
 
@@ -302,11 +323,21 @@ def choose_detected_team():
     if not teams:
         return None, ('No Apple team found in Xcode yet. Open Xcode > Settings > Apple Accounts, '
                       'sign in with your Apple Account, close Settings, then run '
-                      f'"{SCRIPT}" again. (If your team still is not found, see '
-                      '--adopt-xcode-team in docs/ios.md.)')
+                      f'"{SCRIPT}" again. If it still finds none, go on with docs/ios.md: '
+                      'step 6 (Open the project and check signing) sets the team.')
     listed = '\n  '.join(describe(t) for t in teams)
     return None, ('Xcode knows several teams:\n  ' + listed +
                   f'\nChoose one and run: {SCRIPT} --team TEAMID')
+
+
+def saved_team(local):
+    """The valid team already in the settings file, or None."""
+    if not local.exists():
+        return None
+    try:
+        return normalize_team(read_xcconfig(local)[0].get(KEY_TEAM, ''))
+    except ConfigError:
+        return None
 
 
 def parse_args(argv):
@@ -323,7 +354,8 @@ def parse_args(argv):
                         help='take the team you picked in Xcode\'s Signing menu, save it here '
                              'and undo that change to the tracked project file')
     parser.add_argument('--force', action='store_true',
-                        help='replace an existing Captura.local.xcconfig')
+                        help='replace an existing Captura.local.xcconfig (the Apple team saved '
+                             'in it is kept unless you pass --team)')
     args = parser.parse_args(argv)
     if bool(args.bundle_id) != bool(args.google_client_id):
         parser.error('--bundle-id and --google-client-id go together')
@@ -350,14 +382,22 @@ def main(argv=None):
 
         if args.bundle_id:
             if local.exists() and not args.force:
-                raise ConfigError(f'{LOCAL} already exists. Keep it, or replace it by running the '
-                                  'same command with --force.')
+                raise AlreadyConfigured(f'{LOCAL} exists from an earlier run. Keep it, or replace it '
+                                        'by running the same command with --force.')
             bundle = normalize_bundle_id(args.bundle_id)
             client = normalize_client_id(args.google_client_id)
             domain = normalize_hosted_domain(args.hosted_domain)
             if team is None:
-                team, team_note = choose_detected_team()
+                kept = saved_team(local)
+                if kept:
+                    team, team_note = kept, (f'Kept the Apple team saved earlier: {kept}. '
+                                             'To use another one, add --team TEAMID.')
+                else:
+                    team, team_note = choose_detected_team()
             write_atomically(local, render_xcconfig(bundle, team or '', client, domain))
+            if bundle != _clean(args.bundle_id):
+                print(f'Using the bundle ID in lowercase: {bundle}. Give the Google admin '
+                      'exactly this value.')
             print(f'Wrote {LOCAL}:')
             print(f'  bundle ID       {bundle}')
             print(f'  Google client   {client}')
@@ -379,6 +419,11 @@ def main(argv=None):
                     print('Next: python3 ios/scripts/check.py')
                     return 0
                 team, team_note = choose_detected_team()
+            if team is None and existing:
+                print(team_note)
+                print(f'Kept the Apple team saved earlier: {existing}.')
+                print('Next: python3 ios/scripts/check.py')
+                return 0
             if team is None:
                 print(team_note, file=sys.stderr)
                 return 1
@@ -400,7 +445,7 @@ def main(argv=None):
         print('Next: python3 ios/scripts/check.py')
         return 0
     except ConfigError as error:
-        print(f'Not changed: {error}', file=sys.stderr)
+        print(f'{error.prefix}: {error}', file=sys.stderr)
         return 1
 
 

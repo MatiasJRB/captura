@@ -6,6 +6,7 @@
 Each line says what was found; anything marked FAIL comes with the next step. The exit
 status is 1 while something blocks installing on the iPhone, 0 otherwise.
 """
+import argparse
 import json
 from pathlib import Path
 import platform
@@ -22,6 +23,8 @@ XCODE_PATH = '/Applications/Xcode.app/Contents/Developer'
 CONFIGURE = configure.SCRIPT
 CREATE_LOCAL = (f'{CONFIGURE} --bundle-id com.yourname.captura '
                 '--google-client-id YOUR-CLIENT-ID.apps.googleusercontent.com')
+NO_TEAM = 'not set and no team found in Xcode'
+STEP_6 = 'step 6 of docs/ios.md (Open the project and check signing)'
 
 
 class Report:
@@ -43,7 +46,11 @@ class Report:
                 for index, step in enumerate(next_step.splitlines()):
                     out.append(('        Next: ' if index == 0 else '              ') + step)
         out.append('')
-        if self.blocking:
+        if [line[:2] for line in self.blocking] == [(FAIL, 'Apple team')] and self.blocking[0][2] == NO_TEAM:
+            # Expected before step 6: Xcode only knows the team once it has been picked there.
+            out.append('Only the Apple team is missing. That is expected if configure.py found no '
+                       f'team: continue with {STEP_6}, then run this check again.')
+        elif self.blocking:
             count = len(self.blocking)
             out.append(f'{count} problem{"s" if count > 1 else ""} block{"" if count > 1 else "s"} '
                        'installing on the iPhone. Fix the first FAIL above, then run this check again.')
@@ -142,6 +149,8 @@ def check_local_config(report, root):
         problems.append('a value contains "//", which cuts it short: ' + ', '.join(truncated))
     try:
         bundle = configure.normalize_bundle_id(values.get(configure.KEY_BUNDLE, ''))
+        if bundle != values.get(configure.KEY_BUNDLE, '').strip():
+            problems.append(f'{configure.KEY_BUNDLE} has capital letters; use {bundle}')
     except ConfigError as error:
         problems.append(f'{configure.KEY_BUNDLE}: {error}')
         bundle = None
@@ -175,9 +184,9 @@ def check_local_config(report, root):
 
 def check_team(report, root, team):
     try:
-        project_team, unexpected, _ = configure.project_team(root)
+        project_team, unexpected, _, upgrade = configure.project_team(root)
     except ConfigError:
-        project_team, unexpected = None, []
+        project_team, unexpected, upgrade = None, [], []
     if team:
         try:
             team = configure.normalize_team(team)
@@ -185,9 +194,15 @@ def check_team(report, root, team):
             report.add(FAIL, 'Apple team', str(error), f'Run: {CONFIGURE} --team TEAMID')
             return ''
         report.add(OK, 'Apple team', team)
-        if project_team or unexpected:
-            report.add(WARN, 'Xcode project', 'Xcode changed the tracked project file',
+        if project_team:
+            report.add(WARN, 'Xcode project', 'Xcode wrote a team into the tracked project file',
                        f'Quit Xcode, then run: {CONFIGURE} --adopt-xcode-team')
+        elif unexpected or upgrade:
+            report.add(WARN, 'Xcode project',
+                       'the tracked project file has changes (for example "Update to recommended '
+                       'settings"); "git pull" can stop on them',
+                       'Unless you changed the project on purpose, quit Xcode and undo them:\n'
+                       f'git checkout -- {configure.PROJECT}')
         return team
     if project_team:
         report.add(FAIL, 'Apple team', f'picked in Xcode ({project_team}) but not saved in your settings',
@@ -202,9 +217,10 @@ def check_team(report, root, team):
                    + ', '.join(configure.describe(t) for t in teams),
                    f'Run: {CONFIGURE} --team TEAMID')
     else:
-        report.add(FAIL, 'Apple team', 'not set and no team found in Xcode',
+        report.add(FAIL, 'Apple team', NO_TEAM,
                    f'Open Xcode > Settings > Apple Accounts and sign in, then run: {CONFIGURE}\n'
-                   'If it still finds none, see "Apple team" in docs/ios.md (--adopt-xcode-team).')
+                   f'If it still finds none, continue with {STEP_6};\n'
+                   f'this clears after {CONFIGURE} --adopt-xcode-team.')
     return ''
 
 
@@ -279,6 +295,13 @@ def check_devices(report):
 
 
 def main(argv=None):
+    argparse.ArgumentParser(
+        prog='python3 ios/scripts/check.py',
+        description='Check that this Mac is ready to install Captura on an iPhone: Xcode, the '
+                    'iOS platform, your settings file, the Apple team, whether Xcode reads your '
+                    'settings, and any iPhone connected by cable. Read-only; never goes online. '
+                    'Exit status 1 while something blocks installing.',
+        epilog='See docs/ios.md, step 5.').parse_args(sys.argv[1:] if argv is None else argv)
     root = configure.ROOT
     report = Report()
     check_mac(report)
