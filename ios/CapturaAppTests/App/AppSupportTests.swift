@@ -36,6 +36,27 @@ final class RecordingRowTests: XCTestCase {
         XCTAssertNil(RecordingRow.startDate(fromChunkName: "notes.m4a"))
     }
 
+    func testStartDateUsesTheGivenTimeZone() throws {
+        let mexico = try XCTUnwrap(TimeZone(identifier: "America/Mexico_City"))
+        let date = RecordingRow.startDate(fromChunkName: "personal-capture-20261006-114503-00000000-0000-4000-8000-000000000003.m4a.partial", timeZone: mexico)
+        XCTAssertEqual(date, Date(timeIntervalSince1970: 1_791_308_703))
+    }
+
+    func testMalformedChunkStampsHaveNoDate() throws {
+        let utc = try XCTUnwrap(TimeZone(identifier: "UTC"))
+        for name in [
+            "personal-capture-20261306-174503-x.m4a", // month 13
+            "personal-capture-20260230-120000-x.m4a", // 30 February
+            "personal-capture-20261006-254503-x.m4a", // hour 25
+            "personal-capture-2026100a-174503-x.m4a",
+            "personal-capture-20261006_174503-x.m4a",
+            "personal-capture-2026",
+            "personal-capture-note-6f9619ff-8b86-d011-b42d-00c04fc964ff.m4a",
+        ] {
+            XCTAssertNil(RecordingRow.startDate(fromChunkName: name, timeZone: utc), name)
+        }
+    }
+
     func testRowsAreNewestFirstWithIncompleteFilesLast() {
         let older = URL(fileURLWithPath: "/tmp/personal-capture-20261006-100000-00000000-0000-4000-8000-000000000004.m4a")
         let newer = URL(fileURLWithPath: "/tmp/personal-capture-20261006-110000-00000000-0000-4000-8000-000000000005.m4a")

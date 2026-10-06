@@ -676,7 +676,12 @@ final class AppModel {
         }
     }
 
+    /// Re-reads the queue and the recordings folder. The folder scan and the rows are
+    /// built off the main actor (the folder only grows); results are applied in order,
+    /// so an older refresh never overwrites a newer one.
     func refreshLibrary() async {
+        libraryRequests &+= 1
+        let request = libraryRequests
         let items: [UploadItem]
         if let queue {
             _ = try? await queue.discover(now: now())
@@ -684,14 +689,19 @@ final class AppModel {
         } else {
             items = []
         }
+        let store = RecordingStore(directory: recorder.directory)
+        let rows = await Task.detached(priority: .userInitiated) {
+            RecordingRow.build(closedChunks: store.closedChunks(), items: items, quarantinedFiles: store.quarantinedFiles())
+        }.value
+        guard request > libraryApplied else { return }
+        libraryApplied = request
         counts = QueueCounts(items)
         nextAttemptDates = items.filter { $0.state == .pending }.compactMap(\.nextAttemptAt)
-        recordings = RecordingRow.build(
-            closedChunks: recorder.closedChunks(),
-            items: items,
-            quarantinedFiles: recorder.quarantinedFiles()
-        )
+        recordings = rows
     }
+
+    @ObservationIgnored private var libraryRequests: UInt64 = 0
+    @ObservationIgnored private var libraryApplied: UInt64 = 0
 
     // MARK: - Settings and messages
 

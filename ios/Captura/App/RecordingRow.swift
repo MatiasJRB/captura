@@ -93,17 +93,38 @@ struct RecordingRow: Identifiable, Equatable, Sendable {
     }
 
     /// `personal-capture-<yyyyMMdd-HHmmss>-<uuid>.m4a[.partial]` in local time.
+    ///
+    /// Parsed by hand: the list is rebuilt often and originals are never deleted, so a
+    /// `DateFormatter` per row became a visible cost after a few months of recordings.
     static func startDate(fromChunkName name: String, timeZone: TimeZone = .current) -> Date? {
-        let prefix = "personal-capture-"
-        guard name.hasPrefix(prefix) else { return nil }
-        let stamp = name.dropFirst(prefix.count).prefix(15)
-        guard stamp.count == 15 else { return nil }
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.timeZone = timeZone
-        formatter.dateFormat = "yyyyMMdd-HHmmss"
-        return formatter.date(from: String(stamp))
+        let prefix = "personal-capture-".utf8
+        let bytes = Array(name.utf8)
+        guard bytes.starts(with: prefix), bytes.count >= prefix.count + 15 else { return nil }
+        let stamp = bytes[prefix.count..<(prefix.count + 15)]
+        let base = stamp.startIndex
+        guard stamp[base + 8] == UInt8(ascii: "-") else { return nil }
+        func number(_ offset: Int, _ length: Int) -> Int? {
+            var value = 0
+            for byte in stamp[(base + offset)..<(base + offset + length)] {
+                guard (UInt8(ascii: "0")...UInt8(ascii: "9")).contains(byte) else { return nil }
+                value = value * 10 + Int(byte - UInt8(ascii: "0"))
+            }
+            return value
+        }
+        guard let year = number(0, 4), let month = number(4, 2), let day = number(6, 2),
+              let hour = number(9, 2), let minute = number(11, 2), let second = number(13, 2)
+        else { return nil }
+        var calendar = Self.gregorian
+        calendar.timeZone = timeZone
+        let parsed = DateComponents(year: year, month: month, day: day, hour: hour, minute: minute, second: second)
+        guard let date = calendar.date(from: parsed) else { return nil }
+        // Reject what a strict formatter would (month 13, 30 February, 25:00...).
+        let back = calendar.dateComponents([.year, .month, .day, .hour, .minute, .second], from: date)
+        guard back == parsed else { return nil }
+        return date
     }
+
+    private static let gregorian = Calendar(identifier: .gregorian)
 
     private static func fileSize(_ url: URL) -> Int64 {
         Int64((try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0)
