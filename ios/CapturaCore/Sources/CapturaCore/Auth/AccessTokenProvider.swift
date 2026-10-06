@@ -68,8 +68,8 @@ public actor AccessTokenProvider: GoogleAccessTokenProviding {
         GoogleAuthorizationRequest(configuration: configuration, endpoints: endpoints, loginHint: loginHint)
     }
 
-    public func state() throws -> GoogleAuthState {
-        guard let credential = try store.load() else { return .signedOut }
+    public func state() async throws -> GoogleAuthState {
+        guard let credential = try await usableCredential() else { return .signedOut }
         return .signedIn(email: credential.accountEmail)
     }
 
@@ -99,7 +99,7 @@ public actor AccessTokenProvider: GoogleAccessTokenProviding {
             guard let idToken = response.idToken else { throw GoogleAuthError.invalidIDToken }
             account = try GoogleIDToken(jwt: idToken).account(for: configuration)
             guard let refreshToken = response.refreshToken else { throw GoogleAuthError.missingRefreshToken }
-            try store.save(GoogleCredential(refreshToken: refreshToken, accountEmail: account.email))
+            try store.save(GoogleCredential(refreshToken: refreshToken, accountEmail: account.email, hostedDomain: account.hostedDomain))
         } catch {
             // Do not leave a live grant behind for an account this app refused.
             try? await tokenClient.revoke(token: response.refreshToken ?? response.accessToken)
@@ -123,14 +123,36 @@ public actor AccessTokenProvider: GoogleAccessTokenProviding {
         if let refreshTask {
             return try await refreshTask.value
         }
-        guard let credential = try store.load() else {
+        guard let credential = try await usableCredential() else {
             cached = nil
             throw GoogleAuthError.signedOut
+        }
+        if let refreshTask {
+            // Another caller started a refresh while the credential was checked.
+            return try await refreshTask.value
         }
         let generation = self.generation
         let task = Task { try await self.refresh(credential, generation: generation) }
         refreshTask = task
         return try await task.value
+    }
+
+    /// The stored credential, or nil. A credential this build's Workspace domain does
+    /// not allow (linked before `hostedDomain` was set or changed) is deleted and its
+    /// grant revoked best-effort: the domain check holds for stored links too, not
+    /// only at sign-in.
+    private func usableCredential() async throws -> GoogleCredential? {
+        guard let credential = try store.load() else { return nil }
+        guard credential.isAllowed(by: configuration) else {
+            generation += 1
+            refreshTask?.cancel()
+            refreshTask = nil
+            cached = nil
+            try? store.delete()
+            try? await tokenClient.revoke(token: credential.refreshToken)
+            return nil
+        }
+        return credential
     }
 
     /// Drops the cached access token, e.g. after Drive answered 401.
@@ -178,7 +200,9 @@ public actor AccessTokenProvider: GoogleAccessTokenProviding {
         guard generation == self.generation else { return try await accessToken() }
         refreshTask = nil
         if let rotated = response.refreshToken, rotated != credential.refreshToken {
-            try? store.save(GoogleCredential(refreshToken: rotated, accountEmail: credential.accountEmail))
+            var updated = credential
+            updated.refreshToken = rotated
+            try? store.save(updated)
         }
         cached = CachedToken(value: response.accessToken, expiresAt: now().addingTimeInterval(response.expiresIn))
         return response.accessToken

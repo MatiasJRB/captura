@@ -57,6 +57,21 @@ final class GoogleSignInControllerTests: XCTestCase {
         XCTAssertEqual(controller.configuration?.callbackScheme, AppAuthFixtures.reversedClientID)
     }
 
+    func testStoredAccountOutsideTheConfiguredDomainStartsSignedOutAndIsUnlinked() async throws {
+        var info = AppAuthFixtures.configuredInfo
+        info["CapturaGoogleHostedDomain"] = "equipo.test"
+        let store = InMemoryTokenStore(GoogleCredential(refreshToken: AppAuthFixtures.refreshToken, accountEmail: "ana@gmail.test"))
+        let transport = AppAuthStubTransport([HTTPResponse(status: 200)])
+        let controller = makeController(info: info, store: store, transport: transport)
+
+        XCTAssertEqual(controller.status, .signedOut, "never shown as linked, not even before the first refresh")
+        await controller.refreshStatus()
+
+        XCTAssertEqual(controller.status, .signedOut)
+        XCTAssertNil(try store.load())
+        XCTAssertEqual(transport.requests.first?.url.absoluteString, "https://oauth2.googleapis.com/revoke")
+    }
+
     func testStoredCredentialStartsSignedIn() {
         let store = InMemoryTokenStore(GoogleCredential(refreshToken: "r", accountEmail: AppAuthFixtures.email))
         XCTAssertEqual(makeController(store: store).status, .signedIn(email: AppAuthFixtures.email))

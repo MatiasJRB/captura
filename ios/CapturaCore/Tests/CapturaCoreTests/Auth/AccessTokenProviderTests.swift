@@ -157,6 +157,58 @@ final class AccessTokenProviderTests: XCTestCase {
         await assertThrowsAuthError(.signedOut) { try await provider.accessToken() }
     }
 
+    func testSignInStoresTheWorkspaceDomainOfTheAccount() async throws {
+        let store = InMemoryTokenStore()
+        let idToken = AuthFixtures.idToken(AuthFixtures.claims(hostedDomain: "equipo.test"))
+        let provider = makeProvider(transport: AuthStubTransport([AuthFixtures.tokenResponse(idToken: idToken)]), store: store, hostedDomain: "equipo.test")
+        let request = provider.makeAuthorizationRequest()
+        try await provider.completeSignIn(callbackURL: AuthFixtures.callbackURL(for: request), request: request)
+        XCTAssertEqual(try store.load()?.hostedDomain, "equipo.test")
+    }
+
+    func testStoredAccountOutsideTheConfiguredDomainIsUnlinkedAndRevoked() async throws {
+        // Linked while no domain was configured; the build now requires equipo.test.
+        let store = InMemoryTokenStore(GoogleCredential(refreshToken: AuthFixtures.refreshToken, accountEmail: "ana@gmail.test"))
+        let transport = AuthStubTransport([HTTPResponse(status: 200)])
+        let provider = makeProvider(transport: transport, store: store, hostedDomain: "equipo.test")
+
+        let state = try await provider.state()
+
+        XCTAssertEqual(state, .signedOut)
+        XCTAssertNil(try store.load())
+        XCTAssertEqual(transport.requests.map(\.url.absoluteString), ["https://oauth2.googleapis.com/revoke"])
+        XCTAssertEqual(transport.requests.first?.formFields["token"], AuthFixtures.refreshToken)
+        await assertThrowsAuthError(.signedOut) { try await provider.accessToken() }
+    }
+
+    func testStoredAccountOutsideTheConfiguredDomainGetsNoAccessToken() async throws {
+        let store = InMemoryTokenStore(GoogleCredential(refreshToken: AuthFixtures.refreshToken, accountEmail: "ana@otro.test", hostedDomain: "otro.test"))
+        let transport = AuthStubTransport([HTTPResponse(status: 200)])
+        let provider = makeProvider(transport: transport, store: store, hostedDomain: "equipo.test")
+
+        await assertThrowsAuthError(.signedOut) { try await provider.accessToken() }
+
+        XCTAssertNil(try store.load())
+        XCTAssertFalse(transport.requests.contains { $0.url.path.hasSuffix("/token") }, "no refresh for a refused account")
+    }
+
+    func testStoredAccountOfTheConfiguredDomainKeepsWorking() async throws {
+        let store = InMemoryTokenStore(GoogleCredential(refreshToken: AuthFixtures.refreshToken, accountEmail: AuthFixtures.email, hostedDomain: "equipo.test"))
+        let provider = makeProvider(transport: AuthStubTransport([refreshResponse("fresh")]), store: store, hostedDomain: "equipo.test")
+        let state = try await provider.state()
+        XCTAssertEqual(state, .signedIn(email: AuthFixtures.email))
+        let token = try await provider.accessToken()
+        XCTAssertEqual(token, "fresh")
+    }
+
+    func testRotatedRefreshTokenKeepsTheWorkspaceDomain() async throws {
+        let store = InMemoryTokenStore(GoogleCredential(refreshToken: AuthFixtures.refreshToken, accountEmail: AuthFixtures.email, hostedDomain: "equipo.test"))
+        let rotated = AuthFixtures.tokenResponse(accessToken: "fresh", refreshToken: "fixture-rotated", idToken: nil)
+        let provider = makeProvider(transport: AuthStubTransport([rotated]), store: store, hostedDomain: "equipo.test")
+        _ = try await provider.accessToken()
+        XCTAssertEqual(try store.load(), GoogleCredential(refreshToken: "fixture-rotated", accountEmail: AuthFixtures.email, hostedDomain: "equipo.test"))
+    }
+
     func testSignInWithoutDriveScopeIsRejected() async {
         let store = InMemoryTokenStore()
         let transport = AuthStubTransport([AuthFixtures.tokenResponse(scope: "openid https://www.googleapis.com/auth/userinfo.email"), HTTPResponse(status: 200)])

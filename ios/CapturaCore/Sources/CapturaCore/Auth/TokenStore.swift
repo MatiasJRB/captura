@@ -6,10 +6,22 @@ import Synchronization
 public struct GoogleCredential: Codable, Equatable, Sendable {
     public var refreshToken: String
     public var accountEmail: String
+    /// The ID token's `hd` claim at sign-in (nil for accounts outside Google Workspace,
+    /// and for credentials stored before it was recorded).
+    public var hostedDomain: String?
 
-    public init(refreshToken: String, accountEmail: String) {
+    public init(refreshToken: String, accountEmail: String, hostedDomain: String? = nil) {
         self.refreshToken = refreshToken
         self.accountEmail = accountEmail
+        self.hostedDomain = hostedDomain
+    }
+
+    /// Whether this build may use the credential: when a Workspace domain is configured,
+    /// only a credential issued for that domain. A link made before the domain was set
+    /// (or changed) must not keep working.
+    public func isAllowed(by configuration: GoogleOAuthConfiguration) -> Bool {
+        guard let expected = configuration.hostedDomain else { return true }
+        return hostedDomain == expected
     }
 
     /// Google account emails compare case-insensitively.

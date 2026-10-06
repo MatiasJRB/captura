@@ -42,7 +42,9 @@ final class GoogleSignInController {
         case .success(let configuration):
             tokenProvider = AccessTokenProvider(configuration: configuration, transport: transport, store: store)
             configurationError = nil
-            if let credential = try? store.load() {
+            // A credential outside the configured Workspace domain is never shown as
+            // linked; `refreshStatus` then removes it (`AccessTokenProvider.state`).
+            if let credential = try? store.load(), credential.isAllowed(by: configuration) {
                 status = .signedIn(email: credential.accountEmail)
             } else {
                 status = .signedOut
