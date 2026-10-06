@@ -115,6 +115,18 @@ final class ChunkWriter: @unchecked Sendable {
         }
     }
 
+    /// Like `finish`, but waits on the calling thread for every buffer queued so far and
+    /// the close. For app termination, where nothing asynchronous runs any more.
+    @discardableResult
+    func finishNow() -> ChunkOutcome? {
+        queue.sync {
+            acceptedGeneration = nil
+            let outcome = closeCurrent()
+            rotation.reset()
+            return outcome
+        }
+    }
+
     func cut() async -> ChunkOutcome? {
         await withCheckedContinuation { continuation in
             cut { continuation.resume(returning: $0) }

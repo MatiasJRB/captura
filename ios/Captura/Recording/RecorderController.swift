@@ -216,7 +216,26 @@ final class RecorderController {
         }
     }
 
+    /// The app is being terminated while it runs (e.g. swiped away in the app switcher
+    /// while recording in the background). Closes the open chunk right now: only closing
+    /// writes the MPEG-4 header, and a `.partial` without it cannot be played or
+    /// uploaded. The closed chunk keeps its final name; the queue finds it at the next
+    /// launch. A kill without notice (Xcode Stop, a crash, memory pressure) still leaves
+    /// the open chunk as an incomplete `.partial`.
+    func applicationWillTerminate() {
+        guard state.phase == .recording || state.phase == .interrupted else { return }
+        resumePending = false
+        sessionStartedAt = nil
+        stopEngineAndSession()
+        writer.finishNow()
+        state = .idle
+    }
+
     private func observeSystemNotifications(on center: NotificationCenter) {
+        let termination = center.addObserver(forName: UIApplication.willTerminateNotification, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.applicationWillTerminate() }
+        }
+        observers.add(termination)
         for name in AudioSessionNotificationParser.observedNames {
             let token = center.addObserver(forName: name, object: nil, queue: .main) { [weak self] notification in
                 guard let pending = AudioSessionNotificationParser.pending(from: notification) else { return }

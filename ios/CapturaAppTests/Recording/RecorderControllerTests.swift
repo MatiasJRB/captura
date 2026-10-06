@@ -301,6 +301,31 @@ final class RecorderControllerTests: XCTestCase {
         XCTAssertEqual(session.deactivateCount, 1)
     }
 
+    // MARK: - Termination
+
+    func testTerminationClosesTheOpenChunkSoItStaysReadable() async throws {
+        let controller = try await recording()
+        engine.emit(seconds: 0.5)
+
+        // No await after the notification: the process ends right after it is handled.
+        post(UIApplication.willTerminateNotification)
+
+        XCTAssertEqual(try partials(), [], "no .partial (an M4A without its header) is left behind")
+        XCTAssertEqual(controller.closedChunks().count, 1, "renamed to its final name; the queue finds it at next launch")
+        XCTAssertEqual(factory.files.last?.closed, true)
+        XCTAssertEqual(factory.files.last?.frames, Int64(RecorderFixtures.frames(seconds: 0.5)))
+        XCTAssertFalse(engine.isRunning)
+        XCTAssertEqual(controller.state, .idle)
+    }
+
+    func testTerminationWhileIdleTouchesNothing() async throws {
+        let controller = makeController()
+        post(UIApplication.willTerminateNotification)
+        XCTAssertEqual(controller.state, .idle)
+        XCTAssertEqual(session.activateCount, 0)
+        XCTAssertTrue(controller.closedChunks().isEmpty)
+    }
+
     // MARK: - Interruptions
 
     func testInterruptionClosesChunkAndEntersInterrupted() async throws {
