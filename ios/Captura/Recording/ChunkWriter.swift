@@ -148,7 +148,7 @@ final class ChunkWriter: @unchecked Sendable {
             do {
                 try open(startedAt: startedAt)
             } catch {
-                log.error("Could not create chunk: \(String(describing: error), privacy: .public)")
+                log.error("Could not create chunk: \(LogPrivacy.publicSummary(of: error), privacy: .public) \(String(describing: error), privacy: .private)")
                 stopAfterFailure(generation: generation)
                 return
             }
@@ -157,7 +157,7 @@ final class ChunkWriter: @unchecked Sendable {
             try current?.file.write(buffer)
             current?.frames += frames
         } catch {
-            log.error("Could not write chunk: \(String(describing: error), privacy: .public)")
+            log.error("Could not write chunk: \(LogPrivacy.publicSummary(of: error), privacy: .public) \(String(describing: error), privacy: .private)")
             stopAfterFailure(generation: generation)
         }
     }
@@ -199,7 +199,7 @@ final class ChunkWriter: @unchecked Sendable {
             return .closed(closed)
         } catch {
             let reason = String(describing: error)
-            log.error("Chunk quarantined: \(reason, privacy: .public)")
+            log.error("Chunk quarantined: \(LogPrivacy.publicSummary(of: error), privacy: .public) \(reason, privacy: .private)")
             // If even the move fails, the `.partial` stays and is quarantined at next launch.
             let quarantined = (try? store.quarantine(chunk.partialURL)) ?? chunk.partialURL
             events(.quarantined(quarantined, reason: reason))

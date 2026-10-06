@@ -81,7 +81,7 @@ enum BackgroundSyncTask {
             try BGTaskScheduler.shared.submit(request)
         } catch {
             // Expected in the Simulator (`unavailable`) and when Background App Refresh is off.
-            log.info("Background sync not scheduled: \(String(describing: error), privacy: .public)")
+            log.info("Background sync not scheduled: \(LogPrivacy.publicSummary(of: error), privacy: .public)")
         }
     }
 

@@ -45,3 +45,20 @@ final class RecordingRowTests: XCTestCase {
         XCTAssertEqual(rows.map(\.status), [.localOnly, .localOnly, .incomplete])
     }
 }
+
+final class LogPrivacyTests: XCTestCase {
+    func testPublicSummaryLeavesOutPathsAndChunkNames() throws {
+        let partial = "/private/var/mobile/Containers/Data/Application/0B9C6A2E/Library/Application Support/Captura/Recordings/personal-capture-20261006-101500-0b9c6a2e-1111-2222-3333-444455556666.m4a.partial"
+        let error = NSError(domain: NSCocoaErrorDomain, code: NSFileWriteFileExistsError, userInfo: [
+            NSFilePathErrorKey: partial,
+            NSURLErrorKey: URL(fileURLWithPath: partial),
+            "NSDestinationFilePath": partial.replacingOccurrences(of: ".partial", with: ""),
+        ])
+        XCTAssertTrue(String(describing: error).contains("personal-capture-"), "precondition: the description has the path")
+
+        let summary = LogPrivacy.publicSummary(of: error)
+
+        XCTAssertEqual(summary, "NSCocoaErrorDomain 516")
+        XCTAssertFalse(summary.contains("/"))
+    }
+}
