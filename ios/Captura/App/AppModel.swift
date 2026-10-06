@@ -58,7 +58,8 @@ final class AppModel {
     @ObservationIgnored private var retryTask: Task<Void, Never>?
     @ObservationIgnored private var backgroundTask: UIBackgroundTaskIdentifier?
     @ObservationIgnored private var isInBackground = false
-    @ObservationIgnored private var pendingIntentStart = false
+    /// When "Grabar con Captura" asked to start while the app was not in the foreground.
+    @ObservationIgnored private var pendingIntentStartAt: Date?
     @ObservationIgnored private var lastStopReason: SyncSummary.StopReason?
 
     init(
@@ -129,9 +130,12 @@ final class AppModel {
         await auth.refreshStatus()
         await reconcileDriveAccount()
         await refreshLibrary()
-        if pendingIntentStart {
-            pendingIntentStart = false
-            await startRecording()
+        if let requestedAt = pendingIntentStartAt {
+            pendingIntentStartAt = nil
+            // Only the activation the intent itself caused; a later, unrelated open of the
+            // app must never turn the microphone on.
+            let age = now().timeIntervalSince(requestedAt)
+            if age >= 0, age <= Self.intentStartWindow { await startRecording() }
         }
         prepareFolderIfNeeded()
         requestSync()
@@ -140,24 +144,43 @@ final class AppModel {
     func sceneEnteredBackground() {
         isInBackground = true
         updateBackgroundAssertion()
+        scheduleBackgroundSyncIfNeeded()
+    }
+
+    /// Work for a `BGProcessingTask`: one sync pass (and its follow-ups). Returns
+    /// whether it finished without being cancelled.
+    ///
+    /// Cancelling the calling Task (the task's expiration handler) cancels the running
+    /// pass too, so the work returns promptly and the task can be completed in time.
+    func runBackgroundSync() async -> Bool {
+        await withTaskCancellationHandler {
+            // A fresh background launch has not seen the network yet.
+            network = await networkMonitor.current()
+            await reconcileDriveAccount()
+            await refreshLibrary()
+            // Expired before the pass started: start nothing (the handler found no pass).
+            guard !Task.isCancelled else { return false }
+            requestSync()
+            await waitUntilIdle()
+            scheduleBackgroundSyncIfNeeded()
+            return !Task.isCancelled
+        } onCancel: {
+            Task { @MainActor [weak self] in self?.stopSyncForExpiredTime() }
+        }
+    }
+
+    /// Asks iOS for a later wake-up while audio waits for an allowed upload.
+    private func scheduleBackgroundSyncIfNeeded() {
         if canSync, isLinked, counts.waiting > 0, settings.automaticSync || manualWindowOpen {
             background.scheduleProcessingSync()
         }
     }
 
-    /// Work for a `BGProcessingTask`: one sync pass (and its follow-ups). Returns
-    /// whether it finished without being cancelled.
-    func runBackgroundSync() async -> Bool {
-        // A fresh background launch has not seen the network yet.
-        network = await networkMonitor.current()
-        await reconcileDriveAccount()
-        await refreshLibrary()
-        requestSync()
-        await waitUntilIdle()
-        if canSync, isLinked, counts.waiting > 0, settings.automaticSync || manualWindowOpen {
-            background.scheduleProcessingSync()
-        }
-        return !Task.isCancelled
+    /// A chunk closed while the app is already in the background (rotation, or
+    /// "Detener Captura"): leaving the screen happened before it existed.
+    private func scheduleBackgroundSyncIfInBackground() {
+        guard isInBackground || !isAppInForeground() else { return }
+        scheduleBackgroundSyncIfNeeded()
     }
 
     // MARK: - Recording
@@ -181,6 +204,7 @@ final class AppModel {
         await refreshLibrary()
         requestSync()
         updateBackgroundAssertion()
+        scheduleBackgroundSyncIfInBackground()
         return wasActive
     }
 
@@ -198,11 +222,15 @@ final class AppModel {
     /// before the app is in the foreground waits for it.
     func startRecordingFromIntent() async {
         guard isAppInForeground() else {
-            pendingIntentStart = true
+            pendingIntentStartAt = now()
             return
         }
+        pendingIntentStartAt = nil
         await startRecording()
     }
+
+    /// How long a start requested by the intent waits for the app to come forward.
+    static let intentStartWindow: TimeInterval = 30
 
     func openMicrophoneSettings() {
         guard let url = RecorderController.settingsURL else { return }
@@ -606,14 +634,18 @@ final class AppModel {
     }
 
     private func backgroundTimeExpired() {
-        // The engine stops at its next checkpoint; the item returns to pending and
-        // keeps its resumable session for the next run.
-        syncTask?.cancel()
-        retryTask?.cancel()
+        stopSyncForExpiredTime()
         if let identifier = backgroundTask {
             backgroundTask = nil
             background.endTask(identifier)
         }
+    }
+
+    /// The engine stops at its next checkpoint; the item returns to pending and keeps
+    /// its resumable session for the next run.
+    private func stopSyncForExpiredTime() {
+        syncTask?.cancel()
+        retryTask?.cancel()
     }
 
     // MARK: - Queue intake and library
@@ -625,6 +657,7 @@ final class AppModel {
             await self.enqueue(url)
             await self.refreshLibrary()
             self.requestSync()
+            self.scheduleBackgroundSyncIfInBackground()
         }
     }
 

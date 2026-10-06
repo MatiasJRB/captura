@@ -405,6 +405,69 @@ final class AppModelTests: XCTestCase {
         XCTAssertTrue(blocking.wasCancelled)
     }
 
+    func testExpiredBackgroundTaskCancelsTheRunningSync() async throws {
+        let blocking = BlockingSyncService()
+        let h = try make(network: .onWiFi, automatic: true, sync: blocking)
+        try h.writeClosedChunk()
+        await h.model.refreshLibrary()
+        // Same shape as `BackgroundSyncTask.register`: its expiration handler cancels this Task.
+        let operation = Task { @MainActor in await h.model.runBackgroundSync() }
+        await blocking.waitUntilRunning()
+        let finished = expectation(description: "the background work returns once it expires")
+        Task { @MainActor in
+            _ = await operation.value
+            finished.fulfill()
+        }
+
+        operation.cancel()
+        await fulfillment(of: [finished], timeout: 5)
+
+        XCTAssertTrue(blocking.wasCancelled, "the upload stops, so setTaskCompleted is not delayed")
+        XCTAssertFalse(h.model.isSyncing)
+        if !blocking.wasCancelled {
+            // Unblock the old behaviour so tearDown can finish.
+            h.model.sceneEnteredBackground()
+            h.background.expire()
+        }
+    }
+
+    func testAudioClosedInTheBackgroundAsksForALaterBackgroundSync() async throws {
+        let h = try make(network: .noNetwork, automatic: true)
+        await h.model.startRecording()
+        h.model.sceneEnteredBackground()
+        XCTAssertEqual(h.background.scheduledProcessing, 0, "nothing was waiting yet")
+        h.engine?.emit(seconds: 3)
+        await h.recorder.drainPendingWrites()
+
+        await h.model.stopRecording()
+        await h.model.waitUntilIdle()
+
+        XCTAssertEqual(h.model.counts.waiting, 1)
+        XCTAssertGreaterThanOrEqual(h.background.scheduledProcessing, 1)
+    }
+
+    func testChunkRotatedInTheBackgroundAsksForALaterBackgroundSync() async throws {
+        let h = try make(network: .noNetwork, automatic: true)
+        await h.model.startRecording()
+        h.model.sceneEnteredBackground()
+        h.engine?.emit(seconds: 2)
+        await h.recorder.drainPendingWrites()
+
+        _ = await h.recorder.cutChunk()
+        await h.recorder.drainPendingWrites()
+        await h.model.waitUntilIdle()
+
+        XCTAssertTrue(h.recorder.state.isRecording)
+        XCTAssertEqual(h.model.counts.waiting, 1)
+        XCTAssertEqual(h.background.scheduledProcessing, 1)
+    }
+
+    func testAudioClosedInTheForegroundSchedulesNothing() async throws {
+        let h = try make(network: .noNetwork, automatic: true)
+        try await h.recordAndStop()
+        XCTAssertEqual(h.background.scheduledProcessing, 0)
+    }
+
     // MARK: - Intents
 
     func testStopFromAnIntentReportsWhetherItWasRecording() async throws {
@@ -417,5 +480,45 @@ final class AppModelTests: XCTestCase {
         await h.recorder.drainPendingWrites()
         let stopped = await h.model.stopRecording()
         XCTAssertTrue(stopped)
+    }
+
+    /// A model whose foreground state the test controls, on the harness's parts.
+    private func modelWithForeground(_ h: AppModelHarness, _ foreground: @escaping @MainActor () -> Bool) -> AppModel {
+        AppModel(
+            recorder: h.recorder, auth: h.auth, settingsStore: h.settings, queue: h.queue,
+            sync: FakeSyncService(), network: h.network, background: h.background,
+            isAppInForeground: foreground, now: { h.clock.now() }
+        )
+    }
+
+    func testIntentStartWaitsForTheAppToComeForward() async throws {
+        let h = try make(linked: false)
+        var foreground = false
+        let model = modelWithForeground(h) { foreground }
+        await model.startRecordingFromIntent()
+        XCTAssertFalse(h.recorder.state.isRecording, "iOS does not allow starting in the background")
+
+        h.clock.advance(by: 2)
+        foreground = true
+        await model.sceneBecameActive()
+
+        XCTAssertTrue(h.recorder.state.isRecording)
+        await model.stopRecording()
+    }
+
+    func testIntentStartThatWaitedTooLongNeverTurnsTheMicrophoneOn() async throws {
+        let h = try make(linked: false)
+        var foreground = false
+        let model = modelWithForeground(h) { foreground }
+        await model.startRecordingFromIntent()
+
+        h.clock.advance(by: 6 * 60 * 60)
+        foreground = true
+        await model.sceneBecameActive()
+
+        XCTAssertFalse(h.recorder.state.isRecording, "a later, unrelated app open needs a fresh action")
+        h.clock.advance(by: 1)
+        await model.sceneBecameActive()
+        XCTAssertFalse(h.recorder.state.isRecording, "the expired request is gone")
     }
 }
