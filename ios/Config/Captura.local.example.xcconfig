@@ -1,0 +1,16 @@
+// Copy to Captura.local.xcconfig (same folder). That copy is git-ignored.
+// Never commit real values. Do not put "//" inside a value: it starts a comment.
+
+// A bundle identifier unique to you, e.g. com.yourname.captura.
+// It must match the bundle ID of your Google "iOS" OAuth client.
+CAPTURA_BUNDLE_ID = com.example.captura
+
+// Optional: your Apple team ID. Leave empty and pick your team in Xcode instead.
+CAPTURA_DEVELOPMENT_TEAM =
+
+// From your Google Cloud "iOS" OAuth client (Client ID and iOS URL scheme).
+CAPTURA_GOOGLE_IOS_CLIENT_ID = 000000000000-example.apps.googleusercontent.com
+CAPTURA_GOOGLE_REVERSED_CLIENT_ID = com.googleusercontent.apps.000000000000-example
+
+// Optional: only offer accounts of this Google Workspace domain, e.g. example.com.
+CAPTURA_GOOGLE_HOSTED_DOMAIN =

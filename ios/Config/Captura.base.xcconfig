@@ -1,0 +1,9 @@
+// Safe defaults so a fresh clone builds. Personal values belong in
+// Captura.local.xcconfig (git-ignored); copy Captura.local.example.xcconfig.
+CAPTURA_BUNDLE_ID = org.example.captura
+CAPTURA_DEVELOPMENT_TEAM =
+CAPTURA_GOOGLE_IOS_CLIENT_ID =
+CAPTURA_GOOGLE_REVERSED_CLIENT_ID = org.example.captura.oauth
+CAPTURA_GOOGLE_HOSTED_DOMAIN =
+
+#include? "Captura.local.xcconfig"
