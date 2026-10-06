@@ -39,6 +39,12 @@ enum ChunkWriterEvent: Equatable, Sendable {
 /// `generation` they came from; after `finish()` buffers from that capture are
 /// ignored, so a late buffer can never create a chunk after the user stopped.
 final class ChunkWriter: @unchecked Sendable {
+    /// Moves a buffer to the writer queue. The converter allocates a new buffer for
+    /// every delivery and never touches it again, so the queue owns it exclusively.
+    private struct BufferHandoff: @unchecked Sendable {
+        let buffer: AVAudioPCMBuffer
+    }
+
     private struct OpenChunk {
         let file: AudioChunkFile
         let partialURL: URL
@@ -84,8 +90,9 @@ final class ChunkWriter: @unchecked Sendable {
     }
 
     func append(_ buffer: AVAudioPCMBuffer, generation: UInt64) {
+        let handoff = BufferHandoff(buffer: buffer)
         queue.async {
-            self.write(buffer, generation: generation)
+            self.write(handoff.buffer, generation: generation)
         }
     }
 

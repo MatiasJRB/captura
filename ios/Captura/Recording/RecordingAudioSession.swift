@@ -4,6 +4,7 @@ import UIKit
 
 /// The slice of `AVAudioSession` / `AVAudioApplication` the recorder needs,
 /// so the controller can be tested without a microphone.
+@MainActor
 protocol RecordingAudioSession: AnyObject {
     var permission: MicrophonePermission { get }
     func requestPermission() async -> MicrophonePermission
@@ -61,6 +62,12 @@ enum AudioSessionNotificationParser {
     ]
 
     static func event(from notification: Notification, inputAvailable: Bool) -> AudioSessionEvent? {
+        pending(from: notification)?.resolve(inputAvailable: inputAvailable)
+    }
+
+    /// Parses everything except input availability, which the controller reads on
+    /// the main actor when it handles the event.
+    static func pending(from notification: Notification) -> PendingSessionEvent? {
         let info = notification.userInfo ?? [:]
         switch notification.name {
         case AVAudioSession.interruptionNotification:
@@ -68,29 +75,39 @@ enum AudioSessionNotificationParser {
                   let type = AVAudioSession.InterruptionType(rawValue: raw) else { return nil }
             switch type {
             case .began:
-                return .interruptionBegan
+                return .ready(.interruptionBegan)
             case .ended:
                 let options = AVAudioSession.InterruptionOptions(rawValue: info[AVAudioSessionInterruptionOptionKey] as? UInt ?? 0)
-                return .interruptionEnded(shouldResume: options.contains(.shouldResume))
+                return .ready(.interruptionEnded(shouldResume: options.contains(.shouldResume)))
             @unknown default:
                 return nil
             }
         case AVAudioSession.routeChangeNotification:
             guard let raw = info[AVAudioSessionRouteChangeReasonKey] as? UInt,
                   let reason = AVAudioSession.RouteChangeReason(rawValue: raw) else { return nil }
-            let cause: RouteChangeCause
             switch reason {
-            case .oldDeviceUnavailable: cause = .inputDeviceLost
-            case .noSuitableRouteForCategory: cause = .noSuitableRoute
-            default: cause = .other
+            case .oldDeviceUnavailable: return .routeChanged(.inputDeviceLost)
+            case .noSuitableRouteForCategory: return .routeChanged(.noSuitableRoute)
+            default: return .routeChanged(.other)
             }
-            return .routeChanged(cause, inputAvailable: inputAvailable)
         case AVAudioSession.mediaServicesWereResetNotification:
-            return .mediaServicesReset
+            return .ready(.mediaServicesReset)
         case UIApplication.didBecomeActiveNotification:
-            return .becameActive
+            return .ready(.becameActive)
         default:
             return nil
+        }
+    }
+}
+
+enum PendingSessionEvent: Equatable, Sendable {
+    case ready(AudioSessionEvent)
+    case routeChanged(RouteChangeCause)
+
+    func resolve(inputAvailable: Bool) -> AudioSessionEvent {
+        switch self {
+        case .ready(let event): return event
+        case .routeChanged(let cause): return .routeChanged(cause, inputAvailable: inputAvailable)
         }
     }
 }

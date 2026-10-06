@@ -15,7 +15,10 @@ protocol AudioCaptureEngine: AnyObject {
 }
 
 /// `AVAudioEngine` input tap + `AVAudioConverter` (rate conversion and downmix to mono).
-final class AVAudioCaptureEngine: AudioCaptureEngine {
+/// Confined to the main thread: the controller calls it from the main actor and the
+/// configuration notification is delivered on the main queue. The tap block only
+/// captures the converter pump and the sink, never `self`.
+final class AVAudioCaptureEngine: AudioCaptureEngine, @unchecked Sendable {
     private let engine: AVAudioEngine
     private var configurationObserver: NSObjectProtocol?
     private var tapInstalled = false
@@ -106,23 +109,37 @@ final class ConverterPump: @unchecked Sendable {
         guard input.frameLength > 0 else { return [] }
         let ratio = converter.outputFormat.sampleRate / converter.inputFormat.sampleRate
         let capacity = AVAudioFrameCount((Double(input.frameLength) * ratio).rounded(.up)) + 64
-        var supplied = false
+        let feed = SingleInput(input)
         var outputs: [AVAudioPCMBuffer] = []
         for _ in 0..<16 {
             guard let output = AVAudioPCMBuffer(pcmFormat: converter.outputFormat, frameCapacity: capacity) else { break }
             var error: NSError?
             let status = converter.convert(to: output, error: &error) { _, inputStatus in
-                if supplied {
+                guard let buffer = feed.take() else {
                     inputStatus.pointee = .noDataNow
                     return nil
                 }
-                supplied = true
                 inputStatus.pointee = .haveData
-                return input
+                return buffer
             }
             if status == .error || output.frameLength == 0 { break }
             outputs.append(output)
         }
         return outputs
+    }
+}
+
+/// Hands one buffer to the converter exactly once. The converter calls its input
+/// block synchronously inside `convert(to:error:withInputFrom:)`, on this thread.
+private final class SingleInput: @unchecked Sendable {
+    private var buffer: AVAudioPCMBuffer?
+
+    init(_ buffer: AVAudioPCMBuffer) {
+        self.buffer = buffer
+    }
+
+    func take() -> AVAudioPCMBuffer? {
+        defer { buffer = nil }
+        return buffer
     }
 }

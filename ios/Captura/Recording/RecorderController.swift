@@ -46,11 +46,16 @@ final class RecorderController {
     @ObservationIgnored private var resumePending = false
     @ObservationIgnored private var isStarting = false
 
+    /// Every dependency has a production default; tests inject fakes.
+    /// - Parameters:
+    ///   - directory: where chunks are written (default Application Support/Captura/Recordings).
+    ///   - chunkDuration: rotation length (default 15 minutes, Android `CHUNK_MS`).
+    ///   - session: `nil` uses the system `AVAudioSession`.
     init(
         directory: URL = RecordingStore.defaultDirectory,
         chunkDuration: TimeInterval = ChunkRotation.defaultChunkDuration,
         format: RecordingFormat = .standard,
-        session: RecordingAudioSession = SystemRecordingAudioSession(),
+        session: RecordingAudioSession? = nil,
         makeEngine: @escaping @MainActor () -> AudioCaptureEngine = { AVAudioCaptureEngine() },
         fileFactory: AudioChunkFileFactory = AACChunkFileFactory(),
         notificationCenter: NotificationCenter = .default,
@@ -58,6 +63,7 @@ final class RecorderController {
         now: @escaping @Sendable () -> Date = { Date() }
     ) {
         let store = RecordingStore(directory: directory)
+        let session = session ?? SystemRecordingAudioSession()
         let relay = WriterEventRelay()
         self.directory = directory
         self.chunkDuration = chunkDuration
@@ -213,13 +219,10 @@ final class RecorderController {
     private func observeSystemNotifications(on center: NotificationCenter) {
         for name in AudioSessionNotificationParser.observedNames {
             let token = center.addObserver(forName: name, object: nil, queue: .main) { [weak self] notification in
+                guard let pending = AudioSessionNotificationParser.pending(from: notification) else { return }
                 MainActor.assumeIsolated {
                     guard let self else { return }
-                    let event = AudioSessionNotificationParser.event(
-                        from: notification,
-                        inputAvailable: self.session.isInputAvailable
-                    )
-                    if let event { self.handle(event) }
+                    self.handle(pending.resolve(inputAvailable: self.session.isInputAvailable))
                 }
             }
             observers.add(token)
