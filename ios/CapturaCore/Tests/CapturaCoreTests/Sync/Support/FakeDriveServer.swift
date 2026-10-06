@@ -26,6 +26,8 @@ final class FakeDriveServer: HTTPTransport, @unchecked Sendable {
     }
 
     private let lock = NSLock()
+    /// Like Drive, a file created without `parents` lands in My Drive (when set).
+    private let myDriveRootID: String?
     private var files: [String: StoredFile] = [:]
     private var sessions: [String: Session] = [:]
     private var nextID = 1
@@ -34,6 +36,13 @@ final class FakeDriveServer: HTTPTransport, @unchecked Sendable {
     private var failAllStatus: Int?
     private var rejectedNames: [String: HTTPResponse] = [:]
     private var log: [String] = []
+
+    init(myDriveRootID: String? = nil) {
+        self.myDriveRootID = myDriveRootID
+    }
+
+    /// Every stored file and folder, sorted.
+    var allIDs: [String] { lock.withLock { files.keys.sorted() } }
 
     /// "METHOD path" of every request, without query or session IDs.
     var requestLog: [String] { lock.withLock { log } }
@@ -103,6 +112,7 @@ final class FakeDriveServer: HTTPTransport, @unchecked Sendable {
             var metadata = try object(body)
             guard let id = metadata["id"] as? String else { return HTTPResponse(status: 400) }
             if files[id] != nil { return HTTPResponse(status: 409) }
+            if metadata["parents"] == nil, let myDriveRootID { metadata["parents"] = [myDriveRootID] }
             metadata["ownedByMe"] = true
             metadata["shared"] = false
             metadata["trashed"] = false

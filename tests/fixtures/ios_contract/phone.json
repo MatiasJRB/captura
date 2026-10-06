@@ -1,0 +1,46 @@
+{
+  "device_id" : "6f9619ff-8b86-d011-b42d-00c04fc9c0de",
+  "files" : [
+    {
+      "bytes" : 6000,
+      "capture_kind" : "ambient_audio",
+      "drive_file_id" : "fakeDriveId0002",
+      "md5" : "443b713d997237b96b99c65edf21eaf9",
+      "name" : "personal-capture-20261006-152000-6f9619ff-8b86-d011-b42d-0000000000a1.m4a",
+      "queue_state" : "verified",
+      "sha256" : "f844044b4c756d4d4fec35866ca7a6abc77473c626a7aea2fc25a78f633dece6"
+    },
+    {
+      "bytes" : 4500,
+      "capture_kind" : "ambient_audio",
+      "drive_file_id" : "fakeDriveId0003",
+      "md5" : "9bdf08c9e6b0b79c96e0d4453394296f",
+      "name" : "personal-capture-20261006-153500-6f9619ff-8b86-d011-b42d-0000000000a2.m4a",
+      "queue_state" : "verified",
+      "sha256" : "4108f8bbc63687e0dbf0431142b780d486a2866882d04edee90284b8205536c4"
+    },
+    {
+      "bytes" : 3000,
+      "capture_kind" : "dictated_note",
+      "drive_file_id" : "fakeDriveId0004",
+      "md5" : "76dcd22d6cd49211ab8c8e1af4848892",
+      "name" : "personal-capture-note-6f9619ff-8b86-d011-b42d-0000000000b1.m4a",
+      "queue_state" : "verified",
+      "sha256" : "8187de8385d085133e0757978fd0392a4ce34c9178a9391c40e930e1be996f48"
+    },
+    {
+      "bytes" : 2500,
+      "capture_kind" : null,
+      "drive_file_id" : null,
+      "md5" : "96c032274d37a75e893d8eace049e29d",
+      "name" : "personal-capture-20261006-155000-6f9619ff-8b86-d011-b42d-0000000000a3.m4a.partial",
+      "queue_state" : null,
+      "sha256" : "65e7675f234c11d799ca23a30d0686881c385876b640820ed99bc93a07f959a2"
+    }
+  ],
+  "resumed_upload" : {
+    "bytes_sent_before_interruption" : 2048,
+    "name" : "personal-capture-20261006-152000-6f9619ff-8b86-d011-b42d-0000000000a1.m4a"
+  },
+  "upload_sessions_opened" : 3
+}
