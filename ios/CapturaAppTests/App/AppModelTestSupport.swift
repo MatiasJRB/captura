@@ -298,7 +298,7 @@ final class MiniDriveFolderServer: HTTPTransport, @unchecked Sendable {
     private var log: [String] = []
     let expectedToken: String
 
-    init(expectedToken: String = "fixture-access-token") {
+    init(expectedToken: String = AppAuthFixtures.accessToken) {
         self.expectedToken = expectedToken
     }
 

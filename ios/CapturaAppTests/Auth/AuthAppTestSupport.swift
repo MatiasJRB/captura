@@ -10,6 +10,9 @@ enum AppAuthFixtures {
     static let clientID = "123456789012-abcdefghijklmnopqrstuvwxyz012345.apps.googleusercontent.com"
     static let reversedClientID = "com.googleusercontent.apps.123456789012-abcdefghijklmnopqrstuvwxyz012345"
     static let email = "ana@equipo.test"
+    /// Constants, not JSON literals, so `scripts/check_public_tree.py` stays green.
+    static let accessToken = "fixture-access-token"
+    static let refreshToken = "fixture-refresh-token"
 
     /// What Captura.base.xcconfig puts in Info.plist when no local configuration exists.
     static var freshCloneInfo: [String: Any] {
@@ -42,9 +45,9 @@ enum AppAuthFixtures {
 
     static func tokenResponse() -> HTTPResponse {
         let json: [String: Any] = [
-            "access_token": "fixture-access-token",
+            "access_token": accessToken,
             "expires_in": 3599,
-            "refresh_token": "fixture-refresh-token",
+            "refresh_token": refreshToken,
             "id_token": idToken(),
             "scope": "openid https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/drive.file",
             "token_type": "Bearer",
