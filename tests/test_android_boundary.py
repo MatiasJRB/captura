@@ -19,6 +19,14 @@ class AndroidTests(unittest.TestCase):
         self.assertNotIn('storePassword',gradle)
         self.assertNotIn('.debug.keystore',gradle)
         self.assertIn('captureApplicationId',gradle)
+    def test_note_promotes_only_after_encoder_close(self):
+        source=(ROOT/'src/org/example/captura/CaptureService.java').read_text()
+        close=source.index('completedRecording = voiceEngine.finishFile()')
+        promote=source.index('if (finalizeNote && note.active())')
+        publish=source.index('done.put(MediaStore.Audio.Media.IS_PENDING, 0)',promote)
+        self.assertLess(close,promote)
+        self.assertLess(promote,publish)
+        self.assertIn('lastChunkCompleted && lastNotePromoted',source)
     def test_visible_permissions_and_mono_icon(self):
         manifest=ET.parse(ROOT/'AndroidManifest.xml')
         permissions={n.get(A+'name') for n in manifest.iter('uses-permission')}

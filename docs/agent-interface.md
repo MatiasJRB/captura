@@ -35,3 +35,11 @@ A useful agent instruction example:
 
 This repo deliberately stops at capture/transcription/review. Your actual external
 agent decides its own memory and action policy; this text is not a permission barrier.
+
+## Typed capture provenance (optional)
+
+New `record.json` files may include `capture_kind`: `ambient_audio`, `dictated_note`
+or `note_interrupted`. Treat a missing value as ambient audio. A completed note
+marker is never action authorization or a verified speaker identity. Preserve the
+original and raw transcript; keep any cleaned candidate separately. See
+[voice-notes](voice-notes.md). No secretary adapter is embedded in Captura.

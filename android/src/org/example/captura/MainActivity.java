@@ -29,6 +29,8 @@ import android.widget.TextView;
 public final class MainActivity extends Activity {
     private static final int PERMISSION_REQUEST = 41;
     private TextView status, syncStatus, batteryStatus;
+    private Button primaryCapture, microphoneControl;
+    private boolean showingSettings;
     private long lastBatteryRefresh = -30_000L;
     private static final int ACCOUNT_PICKER = 51, DRIVE_AUTH = 52;
     private String authorizingAccount;
@@ -50,10 +52,10 @@ public final class MainActivity extends Activity {
         super.onPostResume();
         String action = getIntent().getAction();
         getIntent().setAction(null);
-        if (CaptureService.ACTION_START.equals(action)) {
+        if (CaptureService.ACTION_START.equals(action) || CaptureService.ACTION_LISTEN.equals(action)) {
             if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
                 startForegroundService(new Intent(this, CaptureService.class)
-                        .setAction(CaptureService.ACTION_START));
+                        .setAction(action));
                 status.postDelayed(this::refreshStatus, 700);
             }
         } else {
@@ -77,7 +79,75 @@ public final class MainActivity extends Activity {
         refreshStatus();
     }
 
+    private void showOverview() {
+        showingSettings = false; setContentView(buildUi()); refreshStatus(); refreshSync();
+    }
+
+    @Override public void onBackPressed() {
+        if (showingSettings) showOverview(); else super.onBackPressed();
+    }
+
     private View buildUi() {
+        batteryStatus = null;
+        LinearLayout root = new LinearLayout(this); root.setOrientation(LinearLayout.VERTICAL);
+        root.setPadding(dp(24), dp(38), dp(24), dp(44)); root.setBackgroundColor(Color.rgb(17,24,21));
+        root.setOnApplyWindowInsetsListener((view, insets) -> {
+            // Android 15+ forces edge-to-edge: keep every control above the nav bar.
+            view.setPadding(dp(24)+insets.getSystemWindowInsetLeft(), dp(16)+insets.getSystemWindowInsetTop(),
+                    dp(24)+insets.getSystemWindowInsetRight(), dp(16)+insets.getSystemWindowInsetBottom());
+            return insets;
+        });
+        LinearLayout header = new LinearLayout(this); header.setGravity(Gravity.CENTER_VERTICAL);
+        android.widget.ImageView logo = new android.widget.ImageView(this);
+        logo.setImageResource(R.mipmap.ic_launcher); logo.setContentDescription("Captura");
+        header.addView(logo, new LinearLayout.LayoutParams(dp(44),dp(44)));
+        TextView title = new TextView(this); title.setText("Captura"); title.setTextSize(28);
+        title.setTextColor(Color.rgb(231,236,232)); title.setPadding(dp(14),0,0,0);
+        header.addView(title); root.addView(header);
+        status = new TextView(this); status.setTextSize(20); status.setGravity(Gravity.CENTER_VERTICAL);
+        status.setPadding(dp(16),dp(20),dp(16),dp(20)); status.setMinHeight(dp(112));
+        status.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);
+        LinearLayout.LayoutParams statusParams = new LinearLayout.LayoutParams(-1,-2);
+        statusParams.setMargins(0,dp(28),0,dp(10)); root.addView(status,statusParams);
+        primaryCapture = button("Grabar"); primaryCapture.setOnClickListener(v -> {
+            if (checkSelfPermission(Manifest.permission.RECORD_AUDIO)!=PackageManager.PERMISSION_GRANTED) {
+                requestNeededPermissions(); return;
+            }
+            startForegroundService(new Intent(this,CaptureService.class).setAction(
+                    CaptureService.isDictating()?CaptureService.ACTION_DONE:CaptureService.isRecording()?CaptureService.ACTION_PAUSE:CaptureService.ACTION_START));
+            status.postDelayed(this::refreshStatus,700);
+        });
+        primaryCapture.setBackgroundTintList(android.content.res.ColorStateList.valueOf(Color.rgb(161,214,190)));
+        primaryCapture.setTextColor(Color.rgb(17,24,21)); root.addView(primaryCapture,buttonParams());
+        microphoneControl = button("Activar voz"); microphoneControl.setOnClickListener(v -> {
+            if (CaptureService.isMicrophoneActive()) {
+                startService(new Intent(this,CaptureService.class).setAction(CaptureService.ACTION_STOP));
+            } else {
+                if (checkSelfPermission(Manifest.permission.RECORD_AUDIO)!=PackageManager.PERMISSION_GRANTED) {
+                    requestNeededPermissions(); return;
+                }
+                if (!getSharedPreferences(CaptureService.PREFS,MODE_PRIVATE).getBoolean(VoiceAudioEngine.PREF_ENABLED,false)) {
+                    showingSettings=true; setContentView(buildSettingsUi()); refreshStatus(); refreshSync(); return;
+                }
+                startForegroundService(new Intent(this,CaptureService.class).setAction(CaptureService.ACTION_LISTEN));
+            }
+            status.postDelayed(this::refreshStatus,700);
+        }); root.addView(microphoneControl,buttonParams());
+        TextView help = new TextView(this); help.setText("Nota: «Lobo, anotá» → dictá → «Lobo, listo».\nControl: «Lobo, iniciar / pausar captura».");
+        help.setTextSize(15); help.setTextColor(Color.rgb(184,197,191));
+        LinearLayout.LayoutParams helpParams = new LinearLayout.LayoutParams(-1,-2);
+        helpParams.setMargins(0,dp(18),0,0); root.addView(help,helpParams);
+        root.addView(new View(this),new LinearLayout.LayoutParams(1,0,1));
+        syncStatus = new TextView(this); syncStatus.setTextSize(15); syncStatus.setTextColor(Color.rgb(184,197,191));
+        root.addView(syncStatus);
+        Button sync = button("Sincronizar ahora"); sync.setOnClickListener(v -> manualSync()); root.addView(sync,buttonParams());
+        Button settings = button("Ajustes"); settings.setOnClickListener(v -> {
+            showingSettings = true; setContentView(buildSettingsUi()); refreshStatus(); refreshSync();
+        }); root.addView(settings,buttonParams());
+        return root;
+    }
+
+    private View buildSettingsUi() {
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setPadding(dp(28), dp(46), dp(28), dp(28));
@@ -89,46 +159,45 @@ public final class MainActivity extends Activity {
         title.setTextColor(Color.rgb(231, 236, 232));
         root.addView(title);
 
-        TextView explanation = new TextView(this);
-        explanation.setText("Grabás al tocar «Iniciar / reanudar» o el botón rápido «Captura». Sigue con la pantalla apagada y guarda tramos de 15 minutos. Wi-Fi, Drive y USB no encienden el micrófono. Pausar lo apaga; para volver, tocá reanudar. Después de reiniciar el teléfono, abrí la app y revisá el estado.");
-        explanation.setTextSize(17);
-        explanation.setTextColor(Color.rgb(184, 197, 191));
+        title.setText("Ajustes");
+        Button back = button("Volver a Captura");
+        back.setOnClickListener(v -> showOverview()); root.addView(back, buttonParams());
         LinearLayout.LayoutParams textParams = new LinearLayout.LayoutParams(-1, -2);
         textParams.setMargins(0, dp(18), 0, dp(24));
-        root.addView(explanation, textParams);
 
-        status = new TextView(this);
-        status.setTextSize(19);
-        status.setGravity(Gravity.CENTER_VERTICAL);
-        status.setPadding(dp(18), dp(18), dp(18), dp(18));
-        status.setMinHeight(dp(86));
-        root.addView(status, new LinearLayout.LayoutParams(-1, -2));
-
-        Button start = button("Iniciar / reanudar");
-        start.setOnClickListener(v -> {
-            if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
-                requestNeededPermissions();
+        CheckBox voice = new CheckBox(this);
+        boolean modelAvailable = VoiceAudioEngine.modelPackaged(this);
+        voice.setText(modelAvailable ? "Voz local: decí «Lobo» · la pausa mantiene la escucha"
+                : "Comandos por voz: esta versión no incluye el modelo local");
+        voice.setChecked(getSharedPreferences(CaptureService.PREFS, MODE_PRIVATE)
+                .getBoolean(VoiceAudioEngine.PREF_ENABLED, false));
+        voice.setEnabled(modelAvailable);
+        voice.setOnClickListener(v -> {
+            if (isCaptureServiceRunning()) {
+                voice.setChecked(!voice.isChecked());
+                new AlertDialog.Builder(this).setMessage("Detené Captura por completo antes de cambiar el modo de micrófono.")
+                        .setPositiveButton("Entendido", null).show();
                 return;
             }
-            Intent intent = new Intent(this, CaptureService.class).setAction(CaptureService.ACTION_START);
-            startForegroundService(intent);
-            status.postDelayed(this::refreshStatus, 700);
+            getSharedPreferences(CaptureService.PREFS, MODE_PRIVATE).edit()
+                    .putBoolean(VoiceAudioEngine.PREF_ENABLED, voice.isChecked()).apply();
         });
-        root.addView(start, buttonParams());
-
-        Button pause = button("Pausar");
-        pause.setOnClickListener(v -> {
-            startService(new Intent(this, CaptureService.class).setAction(CaptureService.ACTION_PAUSE));
-            status.postDelayed(this::refreshStatus, 400);
+        root.addView(voice, textParams);
+        Button listen = button("Escuchar comandos sin guardar audio");
+        listen.setEnabled(modelAvailable);
+        listen.setOnClickListener(v -> {
+            if (!getSharedPreferences(CaptureService.PREFS, MODE_PRIVATE)
+                    .getBoolean(VoiceAudioEngine.PREF_ENABLED, false)) {
+                new AlertDialog.Builder(this).setMessage("Habilitá primero los comandos por voz locales.")
+                        .setPositiveButton("Entendido", null).show(); return;
+            }
+            if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+                requestNeededPermissions(); return;
+            }
+            startForegroundService(new Intent(this, CaptureService.class)
+                    .setAction(CaptureService.isRecording() ? CaptureService.ACTION_PAUSE : CaptureService.ACTION_LISTEN));
         });
-        root.addView(pause, buttonParams());
-
-        Button stop = button("Detener por completo");
-        stop.setOnClickListener(v -> {
-            startService(new Intent(this, CaptureService.class).setAction(CaptureService.ACTION_STOP));
-            status.postDelayed(this::refreshStatus, 400);
-        });
-        root.addView(stop, buttonParams());
+        root.addView(listen, buttonParams());
 
         Button settings = button("Abrir ajustes de batería");
         settings.setOnClickListener(v -> startActivity(new Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)));
@@ -255,6 +324,12 @@ public final class MainActivity extends Activity {
         try(SyncQueue queue=new SyncQueue(this)) {
             queue.discover();
             String account=SyncConfig.prefs(this).getString("account","");
+            if (!showingSettings) {
+                syncStatus.setText((account.isEmpty()?"Drive sin vincular": "Drive vinculado")
+                    + " · " + queue.count("pending") + " por subir"
+                    + (queue.count("review") > 0 ? " · " + queue.count("review") + " para revisar" : ""));
+                return;
+            }
             syncStatus.setText((account.isEmpty()?"Drive todavía no vinculado":account+" · "+SyncConfig.FOLDER_NAME)
                 +"\n"+queue.count("pending")+" pendientes · "+queue.count("uploaded")+" sincronizados · "+queue.count("review")+" para revisar"
                 +"\n"+SyncConfig.prefs(this).getString("message","Originales conservados; sincronización automática apagada."));
@@ -290,13 +365,46 @@ public final class MainActivity extends Activity {
     }
 
     private void refreshStatus() {
+        if (status == null) return;
         String value = getSharedPreferences(CaptureService.PREFS, MODE_PRIVATE)
                 .getString(CaptureService.KEY_STATE, "detenida");
         boolean recording = CaptureService.isRecording();
         boolean interrupted = "grabando".equals(value) && !recording;
-        status.setText(recording ? "● Grabando en el teléfono\nSigue con la pantalla apagada" : interrupted ? "! Captura interrumpida\nTocá reanudar y revisá el indicador" : "error".equals(value) ? "! Error de micrófono\nRevisá permisos y el indicador" : "pausada".equals(value) ? "Ⅱ Captura pausada\nNo está grabando · tocá reanudar" : "○ Captura detenida\nNo está grabando · tocá iniciar");
+        String message = CaptureService.isDictating() ? "Dictando nota\nDecí Lobo, listo · máximo 60 segundos" : recording ? "Grabando\nGuarda audio en el teléfono"
+                : CaptureService.isListening() ? "Escuchando a Lobo\nMicrófono activo · no guarda audio"
+                : "preparando_voz".equals(value) ? "Activando micrófono…\nEsperá un momento"
+                : "error_voz".equals(value) ? "Micrófono apagado\n" + voiceErrorHelp()
+                : interrupted || "escuchando".equals(value) ? "! Captura interrumpida\nAbrí la escucha o tocá reanudar"
+                : "error".equals(value) ? "! Error de micrófono\nRevisá permisos y el indicador"
+                : "pausada".equals(value) ? "Ⅱ Captura pausada\nMicrófono apagado · tocá reanudar"
+                : "Micrófono apagado\nTocá Grabar o Activar voz";
+        String noteResult = getSharedPreferences(CaptureService.PREFS, MODE_PRIVATE).getString("note_result", "");
+        if (!CaptureService.isDictating() && "saved".equals(noteResult)) message += "\nÚltima nota guardada en el teléfono";
+        if (!CaptureService.isDictating() && "interrupted".equals(noteResult)) message += "\nNota interrumpida · revisá el audio";
+        if (!message.contentEquals(status.getText())) status.setText(message);
+        if (!showingSettings && primaryCapture != null) {
+            primaryCapture.setText(CaptureService.isDictating() ? "Guardar nota" : recording ? "Pausar captura" : CaptureService.isListening() ? "Grabar" : "preparando_voz".equals(value) ? "Activando…" : "Grabar");
+            boolean preparing = "preparando_voz".equals(value);
+            primaryCapture.setEnabled(!preparing); microphoneControl.setEnabled(!preparing);
+            microphoneControl.setText(CaptureService.isMicrophoneActive() ? "Apagar micrófono" : "Activar voz");
+        }
+        if (CaptureService.hasIncompleteChunk(this))
+            status.append("\n! Hay un archivo incompleto conservado. No se subirá automáticamente.");
         status.setTextColor(recording ? Color.rgb(255, 181, 166) : Color.rgb(205, 224, 211));
         status.setBackgroundColor(recording ? Color.rgb(65, 36, 31) : Color.rgb(35, 49, 41));
+        android.graphics.drawable.Drawable icon = getDrawable(recording ? R.drawable.ic_capture_mono
+                : CaptureService.isListening() ? R.drawable.ic_voice_paused : R.drawable.ic_voice_stopped);
+        icon.setTint(recording ? Color.rgb(255, 181, 166) : Color.rgb(205, 224, 211));
+        icon.setBounds(0, 0, dp(36), dp(36));
+        status.setCompoundDrawables(icon, null, null, null); status.setCompoundDrawablePadding(dp(16));
+    }
+
+    private String voiceErrorHelp() {
+        String error = getSharedPreferences(CaptureService.PREFS, MODE_PRIVATE).getString("voice_error", "unknown");
+        if ("microphone_silenced".equals(error)) return "Android silenció el micrófono. Revisá llamadas y tocá Activar voz.";
+        if ("microphone_permission".equals(error)) return "Falta permiso. Tocá Activar voz para revisarlo.";
+        if ("voice_model".equals(error)) return "Falló el modelo local. Tocá Activar voz para reintentar.";
+        return "Tocá Activar voz para reintentar.";
     }
 
     private void recoverExpectedCapture() {

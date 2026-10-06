@@ -69,3 +69,11 @@ OAuth/signing identity and test on a separate phone. No production credentials,
 private audio or private transcript is included. See [release checklist](docs/release.md).
 
 MIT for repository code; third-party tools/dependencies keep their own licenses.
+
+### New prototype: local voice and short notes
+
+The Android home screen now separates **recording**, **listening without saving**
+and **microphone off**. Optional offline controls require the model and explicit opt-in.
+For a short reviewable note: **“Lobo, anotá” → cue → dictate → “Lobo, listo”**.
+This captures evidence, not a task-executing assistant. See
+[setup, privacy, and unverified hardware limits](docs/voice-notes.md).

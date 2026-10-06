@@ -17,6 +17,8 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
+from capture_kind import capture_kind
+
 API = 'https://www.googleapis.com/drive/v3/'
 MAX_AUDIO = 64 * 1024 * 1024
 FIELDS = 'id,name,mimeType,size,md5Checksum,parents,properties,shared,ownedByMe,trashed'
@@ -239,6 +241,8 @@ def transcribe(config, source, output):
                                       segments=segments),
                       engine=dict(name='whisper.cpp', model=Path(config['model']).name,
                                   vad=True), speaker_verified=False)
+        source_meta = output / 'source.json'
+        record['capture_kind'] = capture_kind(json.loads(source_meta.read_text()).get('drive', {})) if source_meta.is_file() else 'ambient_audio'
         for path in paths:
             os.chmod(path, 0o600)
             path.replace(output / path.name)
