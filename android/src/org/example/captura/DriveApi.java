@@ -70,7 +70,7 @@ final class DriveApi {
     String begin(SyncQueue.Item i, String folder) throws Exception {
         JSONObject data = new JSONObject().put("id",i.driveId).put("name",i.name).put("mimeType","audio/mp4")
                 .put("parents",new JSONArray().put(folder))
-                .put("properties",new JSONObject().put("personalCaptureAudio","1").put("sha256",i.sha));
+                .put("properties",new JSONObject().put("personalCaptureAudio","1").put("sha256",i.sha).put("captureKind", CaptureKind.fromName(i.name)));
         byte[] payload=data.toString().getBytes(StandardCharsets.UTF_8);
         Reply r=call("POST",UPLOAD+"&fields=id",bytes(payload),payload.length,
                 Map.of("Content-Type","application/json; charset=UTF-8","X-Upload-Content-Type","audio/mp4","X-Upload-Content-Length",Long.toString(i.bytes)));
@@ -98,6 +98,9 @@ final class DriveApi {
         boolean parent=false; JSONArray ps=m.optJSONArray("parents");
         if(ps!=null) for(int n=0;n<ps.length();n++) if(folder.equals(ps.getString(n))) parent=true;
         JSONObject props=m.optJSONObject("properties");
+        String expectedKind=CaptureKind.fromName(i.name);
+        if (!"ambient_audio".equals(expectedKind) && (props==null || !expectedKind.equals(props.optString("captureKind"))))
+            throw new SecurityException("remote-note-kind-mismatch");
         boolean result=SyncPolicy.verified(i.bytes,i.md5,i.sha,m.optLong("size",-1),m.optString("md5Checksum"),props==null?"":props.optString("sha256"),parent);
         if(!result) {
             if (m.optLong("size",0)==0 && m.optString("md5Checksum").isEmpty() && parent && props!=null && i.sha.equals(props.optString("sha256"))) return false;

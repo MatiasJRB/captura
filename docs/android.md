@@ -35,3 +35,10 @@ Jobs obey battery/network restrictions, so uploads are not guaranteed instantane
 
 Production/release APK signing and public shared OAuth onboarding are deliberately
 not configured. Never distribute an APK signed with someone else's private phone key.
+
+## Compact home screen and optional voice
+
+The dark home screen shows capture/microphone state, Grabar/Pausar, Activar voz,
+Drive queue and manual sync. Setup and detailed battery history are in Ajustes.
+See [local voice controls and short dictated notes](voice-notes.md) for optional
+model setup, exact phrases, microphone privacy and the prototype's verification limits.

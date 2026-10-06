@@ -27,3 +27,16 @@ Not verified:
 No app installed, existing capture runtime changed, external message sent or repository
 published as part of this extraction. Private verification audio and receipts stay
 outside this source repo; the committed demo is hand-authored fictional text only.
+
+## Local voice / dictated-notes source update
+
+- Public neutral build and a fresh local clean clone: `testDebugUnitTest` +
+  `assembleDebug` passed, 29 JVM tests, 0 failures/errors.
+- Python worker: 18 tests passed; CLI/reader/Android-boundary: 9 tests passed.
+- Publication tree safety check passed; reviewed full reachable source history for
+  forbidden recording/key/database/APK files and private configuration literals.
+  This is a bounded safety check, not a complete secret-scanning guarantee.
+- Optional model grammar vocabulary checked; inert acoustic/parser regression used
+  private local test material and synthetic phrases. None is included in Git.
+- Real-device installation, updated one-screen layout and live dictated-note
+  end-to-end behavior remain **unverified for this update**. No release APK uploaded.

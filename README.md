@@ -1,4 +1,10 @@
+<p align="center">
+  <img src="assets/brand/header.svg" alt="Captura — voice input, kept local" width="800">
+</p>
+
 # Captura
+
+**Say it. Keep the original. Choose your agent.**
 
 **Your phone as a voice-input pipeline for the agent you choose.**
 
@@ -62,10 +68,18 @@ phones have not been validated. Background recording/sync is subject to Android 
 
 ## Status / contribution
 
-Local extraction, not yet publicly released. Contributions should make the bridge
+Open-source prototype; source code is public, not a production-ready app release. Contributions should make the bridge
 simpler or more reliable, not add a personal secretary or SaaS. Before any release:
 review licenses and dependency notices, build from clean checkout, configure a new
 OAuth/signing identity and test on a separate phone. No production credentials,
 private audio or private transcript is included. See [release checklist](docs/release.md).
 
 MIT for repository code; third-party tools/dependencies keep their own licenses.
+
+### New prototype: local voice and short notes
+
+The Android home screen now separates **recording**, **listening without saving**
+and **microphone off**. Optional offline controls require the model and explicit opt-in.
+For a short reviewable note: **“Lobo, anotá” → cue → dictate → “Lobo, listo”**.
+This captures evidence, not a task-executing assistant. See
+[setup, privacy, and unverified hardware limits](docs/voice-notes.md).

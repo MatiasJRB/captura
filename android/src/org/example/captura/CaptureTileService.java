@@ -63,10 +63,11 @@ public final class CaptureTileService extends TileService {
         boolean active = CaptureService.isRecording();
         tile.setIcon(android.graphics.drawable.Icon.createWithResource(this, R.drawable.ic_capture_mono));
         tile.setLabel("Captura");
-        tile.setSubtitle(active ? "Grabando" : "Apagada");
+        tile.setSubtitle(active ? "Grabando" : CaptureService.isListening() ? "Escucha comandos" : "Apagada");
         tile.setState(active ? Tile.STATE_ACTIVE : Tile.STATE_INACTIVE);
         tile.setContentDescription(active
                 ? "Captura grabando. Tocar para pausar."
+                : CaptureService.isListening() ? "Archivos pausados, micrófono activo. Tocar para grabar."
                 : "Captura apagada. Tocar para grabar.");
         tile.updateTile();
     }
