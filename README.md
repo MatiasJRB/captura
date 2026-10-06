@@ -49,7 +49,7 @@ that folder is sensitive and must never be published casually.
 - [iPhone](docs/ios.md): Apple-silicon Mac, Xcode 27 and a free Apple Account; numbered
   steps from installing Xcode to the first upload, plus the Google Cloud setup.
 - [Worker](docs/worker.md): macOS, Homebrew whisper.cpp/ffmpeg/rclone, models, then
-  `capture init` → `doctor` → `probe` → `pin` → `run`.
+  `capture init` → `doctor` → `probe` → `pin` → `run` (`set` changes a value later).
 - [Agent integration](docs/agent-interface.md): read-only CLI and versioned record format.
 - [Privacy](docs/privacy.md): permissions, cloud copies and review boundaries.
 - [Origins and licenses](NOTICE.md).

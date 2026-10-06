@@ -19,8 +19,10 @@ Keep this repository a small capture/sync/transcription bridge, not an agent fra
   Personal values go in git-ignored `ios/Config/Captura.local.xcconfig` via
   `ios/scripts/configure.py`; `ios/scripts/check.py` is the read-only readiness check.
   Real-microphone tests are opt-in; delete any audio they produce.
-- Setup helpers (`ios/scripts/*.py`, `bin/capture init/doctor/pin`) never use the
+- Setup helpers (`ios/scripts/*.py`, `bin/capture init/set/doctor/pin`) never use the
   network, download, or print tokens/secrets; tests fake external tools via PATH.
+  A `next_step` is one pasteable command or prose without a command, never both, and
+  never puts a secret on the command line.
 - User-facing setup docs: numbered steps, each with what you should see and what to do
   if not (`docs/ios.md`, `docs/worker.md`). iOS UI strings are Spanish; repo text English.
 - Check staged files/full history before public publication. No automatic publish steps.

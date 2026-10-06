@@ -8,7 +8,10 @@ python3 bin/capture list --root /your/private/inbox
 python3 bin/capture read RECORD_ID --root /your/private/inbox
 ```
 
-Stdout is JSON; errors on stderr are sanitized JSON and exit status is nonzero.
+Stdout is JSON; errors on stderr are sanitized JSON and exit status is nonzero. Setup
+results may carry advice: `next_step` (one shell command, or prose without a command),
+`note` and `alternative`. Only when stderr is a terminal, that advice is also printed
+there as plain `Next:` / `Or:` lines for a person to copy; pipes and logs get JSON only.
 `list` returns `{schema_version: 1, records: [...], errors: [...]}`; invalid records
 are reported rather than interpreted. `read` rejects path traversal/symlinks.
 `probe --config ...` and `run --config ...` are separate, explicit network/import

@@ -62,11 +62,16 @@ start with `#` are only notes; you don't need to type them.
 cd ~
 git clone https://github.com/MatiasJRB/captura.git
 cd captura
+ls ios/scripts
 ```
 
-- *You should see:* `Cloning into 'captura'...` followed by `done`. From now on, every
-  command runs inside this `captura` folder. If you open a new Terminal window, run
-  `cd ~/captura` first.
+- *You should see:* `Cloning into 'captura'...` followed by `done`, and then
+  `check.py` and `configure.py` from the last command. From now on, every command runs
+  inside this `captura` folder. If you open a new Terminal window, run `cd ~/captura`
+  first.
+- *If the last command says `No such file or directory`:* the version you downloaded
+  doesn't include the iPhone app yet. Stop here and tell whoever sent you this guide.
+  (For them: [before handing out this guide](release.md#before-handing-out-the-setup-guides).)
 - *If macOS asks to install the command line developer tools:* open Xcode once (step 1),
   then run the commands again.
 - Keep the folder in your home folder, as above. Don't put it in Documents, Desktop or
@@ -78,7 +83,8 @@ cd captura
 Pick a **bundle ID**. It's the app's name for Apple and Google and must be unique to
 you. Use `com.` + your name + `.captura`, in lowercase with no spaces, for example
 `com.anagarcia.captura`. Whoever creates the Google iOS client must enter **exactly**
-this value (see the admin section below). Then run:
+this value (see the admin section below). If you type capital letters, the script
+saves the ID in lowercase and tells you; give the admin the value it prints. Then run:
 
 ```sh
 python3 ios/scripts/configure.py --bundle-id com.yourname.captura --google-client-id PASTE-THE-IOS-CLIENT-ID
@@ -91,13 +97,15 @@ Workspace. The app will then only accept accounts from that domain.
   and `Using the team Xcode knows: ABCDE12345 (Your Name (Personal Team))`.
 - *If it says `No Apple team found in Xcode yet`:* finish step 1.3, then run
   `python3 ios/scripts/configure.py` again with no other arguments. If it still finds
-  no team, carry on: step 6 covers it.
+  no team, carry on: step 5 then reports only the Apple team as missing, and step 6
+  sets it.
 - *If it says `Xcode knows several teams`:* pick the one you want (usually the one marked
   Personal Team) and run `python3 ios/scripts/configure.py --team THAT-TEAM-ID`.
 - *If it says `Not changed: ...`:* the message names the value that's wrong and gives
   an example. Fix it and run the command again.
-- *If it says the file `already exists`:* you configured it before. Add `--force` to
-  replace it.
+- *If it says `Already configured: ...`:* you ran this step before. To replace your
+  settings, run the same command again with `--force` at the end. The Apple team you
+  saved before is kept (add `--team` only to change it).
 
 This file is yours. Git ignores it, so `git pull` never overwrites it and you never
 commit it by accident. It holds identifiers, not passwords.
@@ -109,8 +117,11 @@ python3 ios/scripts/check.py
 ```
 
 - *You should see:* a list of `ok` lines and `Ready.` at the end.
-- *If a line says `FAIL`:* do what its `Next:` line says, then run the check again. Lines
-  marked `warn` or `info` don't block you.
+- *If the only `FAIL` is `Apple team` and step 4 said no team was found:* that's
+  expected at this point. The check ends with "Only the Apple team is missing". Go on to
+  step 6, which sets the team.
+- *If any other line says `FAIL`:* do what its `Next:` line says, then run the check
+  again. Lines marked `warn` or `info` don't block you.
 
 The check is read-only and never goes online. It checks Xcode, the iOS platform, your
 settings file, the Apple team, whether Xcode really reads your settings, and any iPhone
@@ -122,25 +133,39 @@ connected by cable.
 open ios/Captura.xcodeproj
 ```
 
+If Xcode offers **Update to recommended settings** (as a dialog, or as a yellow warning
+in the list of issues), don't accept it: close it or leave the warning there. The
+project already has the settings it needs, and accepting changes a shared project file,
+which later stops `git pull`. If you accepted it by mistake, `check.py` shows the command
+that undoes it.
+
 1. In the left sidebar, click the blue **Captura** project icon at the top. Then, under
    Targets, click **Captura** and open the **Signing & Capabilities** tab.
    - *You should see:* "Automatically manage signing" ticked, **Team** set to
      "Your Name (Personal Team)", and **Bundle Identifier** showing your bundle ID.
+   - *If Bundle Identifier shows `org.example.captura`:* Xcode isn't reading your
+     settings. Don't pick a team yet: Xcode would register `org.example.captura` and use
+     up one of your 10 app IDs. Quit Xcode, do steps 4 and 5 again, then open the
+     project again.
 2. *If Team shows **None**, or you see "Signing for "Captura" requires a development
    team":* choose your "(Personal Team)" in the **Team** menu. Xcode then writes the
    team into a shared project file, which would block `git pull` later. To move it into
    your own settings instead:
    1. Quit Xcode (Xcode > Quit Xcode).
    2. Run `python3 ios/scripts/configure.py --adopt-xcode-team`.
-   3. Open the project again with `open ios/Captura.xcodeproj`.
-   - *You should see:* `Saved Apple team ...` and `Restored ios/Captura.xcodeproj/project.pbxproj`.
-   - *If it refuses because the project file has other changes:* it lists those
-     changes and tells you how to save the team with `--team`.
+   3. Run `python3 ios/scripts/check.py` again.
+   4. Open the project again with `open ios/Captura.xcodeproj`.
+   - *You should see:* `Saved Apple team ...` and `Restored ios/Captura.xcodeproj/project.pbxproj`,
+     then `Ready.` from the check.
+   - *If it refuses because the project file has other changes:* it lists them and
+     prints two commands. Unless you edited the project on purpose, run both, in the
+     order shown: the first undoes the changes, the second saves your team.
 3. *If you see "Failed Registering Bundle Identifier" or "... is not available":*
    someone else already registered that bundle ID. Pick another one (for example add
-   your initials), run step 4 again with `--force`, and ask the Google admin to change
-   the iOS client's bundle ID to the new value, or to create a new iOS client for it.
-   Don't keep trying new IDs: a free account can register only 10 in 7 days.
+   your initials), run step 4 again with `--force` (your Apple team is kept), and ask
+   the Google admin to change the iOS client's bundle ID to the new value, or to create
+   a new iOS client for it. Don't keep trying new IDs: a free account can register only
+   10 in 7 days.
 
 ## 7. Connect the iPhone
 
@@ -241,6 +266,7 @@ open the app. Do step 2 and everything comes back.
 | What you see | What it means | What to do |
 |---|---|---|
 | "Falta configurar Google: …" under Google Drive | The app was built without your settings file. | Run steps 4 and 5, then press Run in Xcode again. |
+| Xcode: "Captura has no settings for this Mac yet, so the app would be signed with a placeholder bundle ID" | You pressed Run on the iPhone before step 4. | Quit Xcode, do steps 4 and 5, then open the project and press Run. |
 | "El valor de CAPTURA_GOOGLE_IOS_CLIENT_ID no parece un ID de cliente…" | The value isn't an iOS client ID. | Run step 4 again with `--force` and the **iOS** client's ID. |
 | Google shows "Error 400: redirect_uri_mismatch" or "invalid_request" | The client ID isn't of type iOS, or its bundle ID differs from yours. | The admin checks that the client type is **iOS** and that its bundle ID is exactly yours. Then use that client's ID in step 4. |
 | "Google no reconoce el ID de cliente…" | Google doesn't know that client (typo, or the client was deleted). | Get the current iOS client ID, redo step 4 with `--force`, press Run. |
@@ -252,6 +278,7 @@ open the app. Do step 2 and everything comes back.
 | "Esa cuenta no es de yourcompany.com…" | `--hosted-domain` only allows that domain. | Choose an account from that domain, or redo step 4 without `--hosted-domain`. |
 | Xcode: "Failed Registering Bundle Identifier" / "is not available" | Someone else registered that bundle ID. | See step 6.3. |
 | Xcode: "Signing for "Captura" requires a development team" | No team is set. | See step 6.2. |
+| Xcode: "Update to recommended settings" | A newer Xcode offers to change the project file. | Don't accept it (step 6). If you did, quit Xcode and run the `git checkout -- ...` command that `check.py` shows. |
 | Xcode says the App ID limit was reached | A free account can register only 10 App IDs in 7 days. | Keep one bundle ID and wait for the limit to reset. Don't keep changing bundle IDs. |
 | Xcode says the maximum number of apps for free development profiles was reached | Only 3 apps installed from Xcode fit on one iPhone. | Remove another app you installed from Xcode. Never remove Captura while it has recordings waiting. Then press Run again. |
 | iPhone: "Desarrollador no confiable" (Untrusted Developer) | You haven't trusted your developer account yet. | Step 9. |
@@ -288,15 +315,19 @@ a **Desktop** client for rclone on the Mac. Both clients must be in the **same p
      people then tap "Volver a vincular Google Drive" on the iPhone and run
      `rclone config reconnect captura:` on the Mac.
 4. Create the **iOS** client: Clients > Create client > Application type **iOS**. Enter
-   the person's bundle ID **exactly** (for example `com.anagarcia.captura`). Leave the
+   the person's bundle ID **exactly**, in lowercase, as `configure.py` printed it (for
+   example `com.anagarcia.captura`). Leave the
    App Store ID and Team ID empty. Keep App Check off, because free Apple accounts can't
    use it. Click Create and send the person the **Client ID** (it ends in
    `.apps.googleusercontent.com`). An iOS client has no secret. Create one iOS client
    per bundle ID.
 5. Create the **Desktop** client for the Mac worker: Clients > Create client >
    Application type **Desktop app**. Copy its **Client ID** and **Client secret** and
-   give them to whoever sets up the worker. Treat the secret like a password: don't
-   paste it into chats or put it in the repository.
+   give them to whoever sets up the worker through a password manager: save both in one
+   item (for example in 1Password) and share that item with them. They paste the
+   values from there at [worker step 3](worker.md#3-connect-rclone-to-google-drive).
+   Treat the secret like a password: don't send it by chat or email, and don't put it in
+   the repository.
 6. Choose the Mac's Drive permission. The iPhone uses `drive.file`, which only covers
    files this project's apps create. Start the Mac with `drive.file` as well. Once the
    iPhone has uploaded one recording, run [`capture probe`](worker.md#6-find-the-phones-folder).
