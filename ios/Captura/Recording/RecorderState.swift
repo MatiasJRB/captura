@@ -36,6 +36,8 @@ enum RecorderError: LocalizedError, Equatable {
     case mustStartInForeground
     case noInputAvailable
     case storageUnavailable
+    /// Less free space than `RecordingSpace.minimumToStart`.
+    case lowStorage
     case couldNotStart(String)
 
     var errorDescription: String? {
@@ -48,6 +50,8 @@ enum RecorderError: LocalizedError, Equatable {
             return "No hay un micrófono disponible."
         case .storageUnavailable:
             return "No se pudo preparar la carpeta de grabaciones."
+        case .lowStorage:
+            return "Queda poco espacio en el iPhone. Liberá espacio para grabar (hacen falta al menos 200 MB)."
         case .couldNotStart:
             return "No se pudo iniciar la grabación. Probá de nuevo."
         }
@@ -58,4 +62,5 @@ enum RecorderMessages {
     static let writeFailed = "No se pudo guardar el audio. Revisá el espacio libre y volvé a tocar Grabar."
     static let resumeFailed = "La grabación quedó interrumpida. Tocá Grabar para seguir."
     static let restartFailed = "Se perdió el micrófono. Tocá Grabar para seguir."
+    static let lowStorage = "La grabación se detuvo porque queda poco espacio en el iPhone. Lo grabado quedó guardado; liberá espacio y volvé a tocar Grabar."
 }

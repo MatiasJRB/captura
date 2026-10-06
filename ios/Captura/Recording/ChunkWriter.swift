@@ -56,6 +56,7 @@ final class ChunkWriter: @unchecked Sendable {
     private let format: RecordingFormat
     private let fileFactory: AudioChunkFileFactory
     private let now: @Sendable () -> Date
+    private let freeSpace: @Sendable () -> Int64?
     private let events: @Sendable (ChunkWriterEvent) -> Void
     private let queue = DispatchQueue(label: "org.example.captura.recorder.writer", qos: .userInitiated)
     private let log = Logger(subsystem: "org.example.captura", category: "recorder")
@@ -65,6 +66,7 @@ final class ChunkWriter: @unchecked Sendable {
     private var current: OpenChunk?
     private var acceptedGeneration: UInt64?
     private var nextChunkStart: Date?
+    private var framesSinceSpaceCheck: Int64 = 0
 
     init(
         store: RecordingStore,
@@ -72,12 +74,14 @@ final class ChunkWriter: @unchecked Sendable {
         chunkDuration: TimeInterval,
         fileFactory: AudioChunkFileFactory,
         now: @escaping @Sendable () -> Date,
+        freeSpace: @escaping @Sendable () -> Int64? = { nil },
         events: @escaping @Sendable (ChunkWriterEvent) -> Void
     ) {
         self.store = store
         self.format = format
         self.fileFactory = fileFactory
         self.now = now
+        self.freeSpace = freeSpace
         self.events = events
         self.rotation = ChunkRotation(chunkDuration: chunkDuration, sampleRate: format.sampleRate)
     }
@@ -155,6 +159,10 @@ final class ChunkWriter: @unchecked Sendable {
             _ = closeCurrent()
         }
         if current == nil {
+            guard !isLowOnSpace() else {
+                stopAfterFailure(generation: generation, message: RecorderMessages.lowStorage)
+                return
+            }
             let startedAt = nextChunkStart ?? now()
             nextChunkStart = nil
             do {
@@ -164,6 +172,7 @@ final class ChunkWriter: @unchecked Sendable {
                 stopAfterFailure(generation: generation)
                 return
             }
+            framesSinceSpaceCheck = 0
         }
         do {
             try current?.file.write(buffer)
@@ -171,7 +180,19 @@ final class ChunkWriter: @unchecked Sendable {
         } catch {
             log.error("Could not write chunk: \(LogPrivacy.publicSummary(of: error), privacy: .public) \(String(describing: error), privacy: .private)")
             stopAfterFailure(generation: generation)
+            return
         }
+        framesSinceSpaceCheck += frames
+        if Double(framesSinceSpaceCheck) >= RecordingSpace.checkInterval * format.sampleRate {
+            framesSinceSpaceCheck = 0
+            // Close while the header still fits, instead of losing the chunk to a full disk.
+            if isLowOnSpace() { stopAfterFailure(generation: generation, message: RecorderMessages.lowStorage) }
+        }
+    }
+
+    private func isLowOnSpace() -> Bool {
+        guard let free = freeSpace() else { return false }
+        return free < RecordingSpace.minimumToContinue
     }
 
     private func open(startedAt: Date) throws {
@@ -183,11 +204,11 @@ final class ChunkWriter: @unchecked Sendable {
         events(.opened(partial: partial, startedAt: startedAt))
     }
 
-    private func stopAfterFailure(generation: UInt64) {
+    private func stopAfterFailure(generation: UInt64, message: String = RecorderMessages.writeFailed) {
         acceptedGeneration = nil
         _ = closeCurrent()
         rotation.reset()
-        events(.failed(RecorderMessages.writeFailed, generation: generation))
+        events(.failed(message, generation: generation))
     }
 
     private func closeCurrent() -> ChunkOutcome? {

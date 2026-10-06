@@ -16,6 +16,7 @@ final class RecorderControllerTests: XCTestCase {
     private var foreground = true
     private var engineStartError: Error?
     private var closedReports: [URL] = []
+    private var freeSpace: FreeSpaceBox!
 
     override func setUp() async throws {
         root = try RecorderFixtures.temporaryDirectory()
@@ -28,6 +29,7 @@ final class RecorderControllerTests: XCTestCase {
         foreground = true
         engineStartError = nil
         closedReports = []
+        freeSpace = FreeSpaceBox(10_000_000_000)
     }
 
     override func tearDown() async throws {
@@ -51,7 +53,8 @@ final class RecorderControllerTests: XCTestCase {
             fileFactory: factory,
             notificationCenter: center,
             isAppInForeground: { [unowned self] in self.foreground },
-            now: { clock.now() }
+            now: { clock.now() },
+            freeSpace: { [freeSpace] in freeSpace?.bytes }
         )
         controller.onChunkClosed = { [unowned self] in self.closedReports.append($0) }
         return controller
@@ -301,6 +304,45 @@ final class RecorderControllerTests: XCTestCase {
         XCTAssertEqual(session.deactivateCount, 1)
     }
 
+    // MARK: - Storage
+
+    func testStartIsRefusedWhenThePhoneIsNearlyFull() async throws {
+        freeSpace.bytes = 150_000_000
+        let controller = makeController()
+        do {
+            try await controller.start()
+            XCTFail("Expected lowStorage")
+        } catch {
+            XCTAssertEqual(error as? RecorderError, .lowStorage)
+        }
+        XCTAssertEqual(session.activateCount, 0, "the microphone is never turned on")
+        XCTAssertEqual(controller.state, .idle)
+    }
+
+    func testRecordingStopsCleanlyBeforeTheDiskFills() async throws {
+        let controller = try await recording(chunkDuration: 900)
+        engine.emit(seconds: 5)
+        await controller.drainPendingWrites()
+        freeSpace.bytes = 60_000_000
+
+        engine.emit(seconds: RecordingSpace.checkInterval + 1)
+        await controller.drainPendingWrites()
+
+        XCTAssertEqual(controller.state, .failed(message: RecorderMessages.lowStorage))
+        XCTAssertFalse(engine.isRunning)
+        XCTAssertEqual(closedReports.count, 1, "the chunk is closed while its header still fits")
+        XCTAssertEqual(try partials(), [])
+        XCTAssertEqual(factory.files.last?.closed, true)
+    }
+
+    func testUnknownFreeSpaceNeverBlocksRecording() async throws {
+        freeSpace.bytes = nil
+        let controller = try await recording()
+        engine.emit(seconds: RecordingSpace.checkInterval + 1)
+        await controller.drainPendingWrites()
+        XCTAssertTrue(controller.state.isRecording)
+    }
+
     // MARK: - Termination
 
     func testTerminationClosesTheOpenChunkSoItStaysReadable() async throws {
@@ -533,5 +575,18 @@ final class RecorderControllerTests: XCTestCase {
     func testDefaultChunkDurationIsFifteenMinutes() {
         let controller = RecorderController(directory: directory, session: session, notificationCenter: center)
         XCTAssertEqual(controller.chunkDuration, 15 * 60)
+    }
+}
+
+/// Free bytes the recorder sees, set by the test and read on the writer queue.
+final class FreeSpaceBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value: Int64?
+
+    init(_ value: Int64?) { self.value = value }
+
+    var bytes: Int64? {
+        get { lock.withLock { value } }
+        set { lock.withLock { value = newValue } }
     }
 }

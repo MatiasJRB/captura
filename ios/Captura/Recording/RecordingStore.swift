@@ -105,3 +105,23 @@ struct RecordingStore: Sendable {
             }
     }
 }
+
+/// Free-space guard for recording. A chunk only becomes readable when it is closed
+/// (the MPEG-4 header is written then), so running out of space mid-chunk loses the
+/// whole chunk. Recording (about 29 MB per hour) therefore stops cleanly well before
+/// the disk is full.
+enum RecordingSpace {
+    /// Needed to start recording.
+    static let minimumToStart: Int64 = 200_000_000
+    /// Below this, the open chunk is closed and recording stops.
+    static let minimumToContinue: Int64 = 100_000_000
+    /// Seconds of audio between checks while recording.
+    static let checkInterval: TimeInterval = 30
+
+    /// Space available for user-initiated content on the recordings volume, or nil
+    /// when unknown (then nothing is blocked).
+    static func available(at directory: URL) -> Int64? {
+        let values = try? directory.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey])
+        return values?.volumeAvailableCapacityForImportantUsage
+    }
+}

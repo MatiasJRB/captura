@@ -37,6 +37,7 @@ final class RecorderController {
     @ObservationIgnored private let makeEngine: @MainActor () -> AudioCaptureEngine
     @ObservationIgnored private let isAppInForeground: @MainActor () -> Bool
     @ObservationIgnored private let now: @Sendable () -> Date
+    @ObservationIgnored private let freeSpace: @Sendable () -> Int64?
     @ObservationIgnored private let writer: ChunkWriter
     @ObservationIgnored private let observers: NotificationObservers
     @ObservationIgnored private var engine: AudioCaptureEngine?
@@ -51,6 +52,7 @@ final class RecorderController {
     ///   - directory: where chunks are written (default Application Support/Captura/Recordings).
     ///   - chunkDuration: rotation length (default 15 minutes, Android `CHUNK_MS`).
     ///   - session: `nil` uses the system `AVAudioSession`.
+    ///   - freeSpace: free bytes for recordings; `nil` reads the recordings volume.
     init(
         directory: URL = RecordingStore.defaultDirectory,
         chunkDuration: TimeInterval = ChunkRotation.defaultChunkDuration,
@@ -60,9 +62,11 @@ final class RecorderController {
         fileFactory: AudioChunkFileFactory = AACChunkFileFactory(),
         notificationCenter: NotificationCenter = .default,
         isAppInForeground: @escaping @MainActor () -> Bool = { UIApplication.shared.applicationState != .background },
-        now: @escaping @Sendable () -> Date = { Date() }
+        now: @escaping @Sendable () -> Date = { Date() },
+        freeSpace: (@Sendable () -> Int64?)? = nil
     ) {
         let store = RecordingStore(directory: directory)
+        let freeSpace = freeSpace ?? { RecordingSpace.available(at: directory) }
         let session = session ?? SystemRecordingAudioSession()
         let relay = WriterEventRelay()
         self.directory = directory
@@ -73,6 +77,7 @@ final class RecorderController {
         self.makeEngine = makeEngine
         self.isAppInForeground = isAppInForeground
         self.now = now
+        self.freeSpace = freeSpace
         self.permission = session.permission
         self.observers = NotificationObservers(center: notificationCenter)
         self.writer = ChunkWriter(
@@ -81,6 +86,7 @@ final class RecorderController {
             chunkDuration: chunkDuration,
             fileFactory: fileFactory,
             now: now,
+            freeSpace: freeSpace,
             events: { relay.send($0) }
         )
         relay.controller = self
@@ -108,6 +114,7 @@ final class RecorderController {
         defer { isStarting = false }
 
         guard isAppInForeground() else { throw RecorderError.mustStartInForeground }
+        if let free = freeSpace(), free < RecordingSpace.minimumToStart { throw RecorderError.lowStorage }
         permission = session.permission
         if permission == .undetermined {
             permission = await session.requestPermission()
