@@ -1,5 +1,6 @@
-// Copy to Captura.local.xcconfig (same folder). That copy is git-ignored.
-// Never commit real values. Do not put "//" inside a value: it starts a comment.
+// Easiest: run `python3 ios/scripts/configure.py` (see docs/ios.md); it writes
+// Captura.local.xcconfig for you. Or copy this file to Captura.local.xcconfig (same
+// folder; git-ignored). Never commit real values. Do not put "//" inside a value.
 
 // A bundle identifier unique to you, e.g. com.yourname.captura.
 // It must match the bundle ID of your Google "iOS" OAuth client.
@@ -8,9 +9,10 @@ CAPTURA_BUNDLE_ID = com.example.captura
 // Your Apple team ID (a free Personal Team works). Set it here, not with the Team
 // menu in Xcode's Signing & Capabilities tab: that menu writes the ID into the tracked
 // ios/Captura.xcodeproj/project.pbxproj, and a later `git pull` then stops on it.
-// To find a Personal Team ID: pick the team in that menu once, copy the value of
-// DEVELOPMENT_TEAM from `git diff ios/Captura.xcodeproj/project.pbxproj`, paste it here,
-// then undo the project change with `git checkout -- ios/Captura.xcodeproj/project.pbxproj`.
+// configure.py finds the team Xcode knows after Xcode > Settings > Apple Accounts. If
+// you already picked it in that menu, quit Xcode and run
+// `python3 ios/scripts/configure.py --adopt-xcode-team`: it moves the ID here and
+// restores the project file.
 CAPTURA_DEVELOPMENT_TEAM =
 
 // From your Google Cloud "iOS" OAuth client (Client ID and iOS URL scheme).
