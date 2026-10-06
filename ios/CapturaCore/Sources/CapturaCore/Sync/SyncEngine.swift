@@ -148,11 +148,22 @@ public struct SyncEngine: Sendable {
 
     /// Ensures the private inbox folder (also useful right after linking Drive, so the
     /// worker's `probe` can find it before the first upload).
+    ///
+    /// When the stored folder is replaced, uploads started under it are forgotten first:
+    /// a resumable session carries its parent folder, so resuming it would finish the
+    /// audio in the old folder, where the worker never looks. This happens before the
+    /// new ID is saved, so a failure leaves the old ID and the next run tries again.
     public func ensureFolder() async throws -> DriveFolderResolution {
         let storage = folderStorage
+        let queue = self.queue
+        let existingID = await storage.load()
         let resolution = try await drive.ensureFolder(
-            existingID: await storage.load(), deviceID: deviceID,
-            persistNewID: { try await storage.save($0) }
+            existingID: existingID, deviceID: deviceID,
+            persistNewID: { newID in
+                // A new ID while one was stored means the stored folder is replaced.
+                if existingID != nil { try await queue.forgetRemoteUploads() }
+                try await storage.save(newID)
+            }
         )
         onEvent?(.folderReady(resolution))
         return resolution
@@ -259,7 +270,8 @@ public struct SyncEngine: Sendable {
         guard checksums == item.checksums else { return await quarantine(item, code: "changed-audio") }
 
         do {
-            var current = item
+            // Re-read: preparing the folder may have forgotten this item's remote upload.
+            var current = await queue.item(id: item.id) ?? item
             if current.driveFileID == nil {
                 let generated = try await drive.generateID()
                 current = try await queue.assignDriveFileID(generated, to: item.id)

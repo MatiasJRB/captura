@@ -484,6 +484,46 @@ final class SyncEngineTests: XCTestCase {
         XCTAssertEqual(summary.statusMessage, "Se creó una carpeta nueva en Drive. Actualizá el folder_id en la Mac.")
     }
 
+    func testReplacedFolderRestartsAPartialUploadInsideTheNewFolder() async throws {
+        let url = try record(1, bytes: Int(2 * quarter + 5_000))
+        server.inject(.dropNextChunk(persisting: Int(quarter)))
+        let engine = makeEngine(chunkSize: quarter)
+        _ = await engine.run(.automatic)
+        let oldFolder = try XCTUnwrap(folders.current)
+        let partial = await item(1)
+        XCTAssertNotNil(partial?.sealedSessionURI, "precondition: a session started under the old folder")
+        server.update(oldFolder) { $0["trashed"] = true }
+        env.now = env.now.addingTimeInterval(31)
+
+        let summary = await engine.run(.automatic)
+
+        let newFolder = try XCTUnwrap(folders.current)
+        XCTAssertEqual(summary.folder?.outcome, .replaced(previousID: oldFolder))
+        XCTAssertEqual(summary.uploaded, 1)
+        let stored = await item(1)
+        XCTAssertEqual(stored?.state, .verified)
+        let driveID = try XCTUnwrap(stored?.driveFileID)
+        XCTAssertNotEqual(driveID, partial?.driveFileID, "a new Drive ID, never the one started under the old folder")
+        XCTAssertEqual(server.ids(withParent: newFolder), [driveID])
+        XCTAssertEqual(server.ids(withParent: oldFolder), [], "the old session is never resumed into the old folder")
+        XCTAssertEqual(server.content(of: driveID), try Data(contentsOf: url))
+    }
+
+    func testFolderReplacedWhileLinkingForgetsUploadsStartedUnderTheOldFolder() async throws {
+        try record(1, bytes: Int(2 * quarter + 5_000))
+        server.inject(.dropNextChunk(persisting: Int(quarter)))
+        _ = await makeEngine(chunkSize: quarter).run(.automatic)
+        let oldFolder = try XCTUnwrap(folders.current)
+        server.update(oldFolder) { $0["trashed"] = true }
+
+        let resolution = try await makeEngine().ensureFolder()
+
+        XCTAssertEqual(resolution.outcome, .replaced(previousID: oldFolder))
+        let stored = await item(1)
+        XCTAssertNil(stored?.driveFileID)
+        XCTAssertNil(stored?.sealedSessionURI)
+    }
+
     func testSharedFolderStopsTheRunWithoutUploading() async throws {
         try record(1)
         _ = await makeEngine().run(.automatic)

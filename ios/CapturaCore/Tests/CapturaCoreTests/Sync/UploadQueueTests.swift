@@ -380,6 +380,71 @@ final class UploadQueueTests: XCTestCase {
         XCTAssertEqual(retried.rejections, 0)
     }
 
+    func testRetryingARemoteReceiptProblemStartsANewRemoteCopy() async throws {
+        let queue = try makeQueue()
+        let item = try await queue.enqueue(fileAt: try writeChunk(1), now: now)
+        try await queue.assignDriveFileID("driveOld0001", to: item.id)
+        try await queue.setSessionURI(URL(string: "https://www.googleapis.com/upload/drive/v3/files?upload_id=old"), for: item.id)
+        for code in ["remote-receipt-mismatch", "remote-file-not-private"] {
+            try await queue.quarantine(item.id, code: code)
+            let retried = try await queue.retryQuarantined(item.id)
+            XCTAssertEqual(retried.state, .pending)
+            XCTAssertNil(retried.driveFileID, code)
+            XCTAssertNil(retried.sealedSessionURI, code)
+        }
+    }
+
+    func testRetryingOtherProblemsKeepsTheRemoteCopy() async throws {
+        let queue = try makeQueue()
+        let item = try await queue.enqueue(fileAt: try writeChunk(1), now: now)
+        try await queue.assignDriveFileID("driveOld0001", to: item.id)
+        try await queue.recordFailure(item.id, code: "drive-http-400", rejected: true, now: now)
+        try await queue.quarantine(item.id, code: "drive-http-400")
+        let retried = try await queue.retryQuarantined(item.id)
+        XCTAssertEqual(retried.driveFileID, "driveOld0001", "the same ID keeps a retry from creating a duplicate")
+    }
+
+    func testForgettingRemoteUploadsKeepsVerifiedReceipts() async throws {
+        let queue = try makeQueue()
+        let pending = try await queue.enqueue(fileAt: try writeChunk(1), now: now)
+        let quarantined = try await queue.enqueue(fileAt: try writeChunk(2), now: now)
+        let verified = try await queue.enqueue(fileAt: try writeChunk(3), now: now)
+        let session = URL(string: "https://www.googleapis.com/upload/drive/v3/files?upload_id=s")
+        for (index, id) in [pending.id, quarantined.id].enumerated() {
+            try await queue.assignDriveFileID("drive000\(index)", to: id)
+            try await queue.setSessionURI(session, for: id)
+        }
+        try await queue.quarantine(quarantined.id, code: "remote-receipt-mismatch")
+        try await queue.markVerified(verified.id, driveFileID: "driveDone01", at: now)
+
+        try await queue.forgetRemoteUploads()
+
+        let reloaded = try makeQueue()
+        for id in [pending.id, quarantined.id] {
+            let stored = await reloaded.item(id: id)
+            XCTAssertNil(stored?.driveFileID)
+            XCTAssertNil(stored?.sealedSessionURI)
+        }
+        let done = await reloaded.item(id: verified.id)
+        XCTAssertEqual(done?.driveFileID, "driveDone01")
+        XCTAssertEqual(done?.state, .verified)
+        let stillQuarantined = await reloaded.item(id: quarantined.id)?.state
+        XCTAssertEqual(stillQuarantined, .quarantined)
+    }
+
+    func testForgettingOnlySessionsKeepsDriveFileIDs() async throws {
+        let queue = try makeQueue()
+        let item = try await queue.enqueue(fileAt: try writeChunk(1), now: now)
+        try await queue.assignDriveFileID("driveKeep01", to: item.id)
+        try await queue.setSessionURI(URL(string: "https://www.googleapis.com/upload/drive/v3/files?upload_id=s"), for: item.id)
+
+        try await queue.forgetRemoteUploads(keepingFileIDs: true)
+
+        let stored = await queue.item(id: item.id)
+        XCTAssertEqual(stored?.driveFileID, "driveKeep01")
+        XCTAssertNil(stored?.sealedSessionURI)
+    }
+
     func testVerifiedItemIgnoresLaterFailures() async throws {
         let queue = try makeQueue()
         let item = try await queue.enqueue(fileAt: try writeChunk(1), now: now)

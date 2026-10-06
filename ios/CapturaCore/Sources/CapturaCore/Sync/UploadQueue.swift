@@ -241,6 +241,10 @@ public actor UploadQueue {
     }
 
     /// A person reviewed a quarantined item and asked to try again.
+    ///
+    /// When the item was rejected because of its remote copy (wrong receipt or parent,
+    /// trashed, shared, not owned), retrying under the same Drive ID could only fail
+    /// the same way, so the retry starts a new remote copy (new ID, new session).
     @discardableResult
     public func retryQuarantined(_ id: String) throws -> UploadItem {
         try mutate(id) { item in
@@ -248,7 +252,36 @@ public actor UploadQueue {
             item.state = .pending
             item.rejections = 0
             item.nextAttemptAt = nil
+            if let code = item.lastError, Self.remoteCopyUnusableCodes.contains(code) {
+                item.driveFileID = nil
+                item.sealedSessionURI = nil
+            }
         }
+    }
+
+    private static let remoteCopyUnusableCodes: Set<String> = [
+        DriveError.remoteReceiptMismatch.code,
+        DriveError.remoteFileNotPrivate.code,
+    ]
+
+    /// Forgets the resumable sessions (and, unless `keepingFileIDs`, the pre-generated
+    /// Drive IDs) of every item that is not verified, so their next upload starts from
+    /// scratch. Used when the remote side they were started for is gone: the inbox
+    /// folder was replaced (a session carries its parent folder), the Google account
+    /// changed, or Drive was unlinked (sessions are capabilities of that grant).
+    /// Verified items keep their receipt. Originals are never touched.
+    public func forgetRemoteUploads(keepingFileIDs: Bool = false) throws {
+        var next = entries
+        var changed = false
+        for (id, var item) in entries where item.state != .verified {
+            let clearID = !keepingFileIDs && item.driveFileID != nil
+            guard clearID || item.sealedSessionURI != nil else { continue }
+            if clearID { item.driveFileID = nil }
+            item.sealedSessionURI = nil
+            next[id] = item
+            changed = true
+        }
+        if changed { try persist(next) }
     }
 
     // MARK: - Persistence
