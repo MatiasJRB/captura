@@ -231,6 +231,123 @@ final class AppModelTests: XCTestCase {
         XCTAssertNil(try h.tokenStore.load())
     }
 
+    // MARK: - Account changes
+
+    private static let sessionA = URL(string: "https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&upload_id=fixtureSessionA")!
+
+    /// A queued chunk with a Drive ID and an upload session started for account A.
+    private func partiallyUploadedChunk(_ h: AppModelHarness) async throws -> String {
+        let id = try h.writeClosedChunk().lastPathComponent
+        await h.model.refreshLibrary()
+        try await h.queue.assignDriveFileID("fixtureDriveFileA0001", to: id)
+        try await h.queue.setSessionURI(Self.sessionA, for: id)
+        return id
+    }
+
+    private func ownedByAccountA(_ settings: SyncSettingsStore) throws {
+        try settings.update {
+            $0.folderID = "fixtureFolderA001"
+            $0.driveAccountEmail = AppAuthFixtures.email
+        }
+    }
+
+    /// Drive refused the grant mid-sync: "Volver a vincular" is shown, account A still stored.
+    private func requireRelink(_ h: AppModelHarness, _ fake: FakeSyncService) async {
+        var reauth = SyncSummary()
+        reauth.stopReason = .needsReauthorization
+        fake.summary = reauth
+        h.model.requestSync()
+        await h.model.waitUntilIdle()
+        XCTAssertTrue(h.model.driveNeedsRelink)
+        XCTAssertEqual(h.model.linkedEmail, AppAuthFixtures.email)
+        fake.summary = SyncSummary()
+    }
+
+    func testLinkingAnotherAccountWithdrawsConsentAndForgetsTheOldAccountsDriveState() async throws {
+        let fake = FakeSyncService()
+        let h = try make(network: .onWiFi, automatic: true, sync: fake, authResponses: [
+            AppAuthFixtures.tokenResponse(email: "beto@otra.test", refreshToken: "fixture-beto"), HTTPResponse(status: 200),
+        ], prepare: ownedByAccountA)
+        let storage = h.settings.folderIDStorage
+        fake.onEnsureFolder = { id in try await storage.save(id) }
+        let id = try await partiallyUploadedChunk(h)
+        await requireRelink(h, fake)
+        let runsBefore = fake.runs.count
+
+        await h.model.linkDrive()
+        await h.model.waitUntilIdle()
+
+        XCTAssertEqual(h.model.linkedEmail, "beto@otra.test")
+        XCTAssertFalse(h.model.settings.automaticSync, "the opt-in was confirmed for the other account")
+        XCTAssertEqual(h.model.settings.driveAccountEmail, "beto@otra.test")
+        XCTAssertEqual(h.model.settings.folderID, "fixtureFolder0001", "a folder of the new account, not account A's")
+        XCTAssertEqual(Array(fake.runs.dropFirst(runsBefore)), [], "nothing uploads without a new opt-in")
+        let item = await h.queue.item(id: id)
+        XCTAssertNil(item?.driveFileID)
+        let session = await h.queue.sessionURI(for: id)
+        XCTAssertNil(session)
+        let revoke = h.authTransport.requests.last
+        XCTAssertEqual(revoke?.url.absoluteString, "https://oauth2.googleapis.com/revoke")
+        XCTAssertEqual(revoke?.appFormFields["token"], "fixture-refresh", "account A's grant is revoked")
+        XCTAssertTrue(h.model.syncMessage.contains("otra cuenta"), h.model.syncMessage)
+    }
+
+    func testRelinkingTheSameAccountKeepsConsentFolderAndUploads() async throws {
+        let fake = FakeSyncService()
+        fake.folder = .success(DriveFolderResolution(id: "fixtureFolderA001", outcome: .reused))
+        let h = try make(network: .onWiFi, automatic: true, sync: fake, authResponses: [
+            AppAuthFixtures.tokenResponse(refreshToken: "fixture-ana-new"),
+        ], prepare: ownedByAccountA)
+        let id = try await partiallyUploadedChunk(h)
+        await requireRelink(h, fake)
+
+        await h.model.linkDrive()
+        await h.model.waitUntilIdle()
+
+        XCTAssertTrue(h.model.settings.automaticSync)
+        XCTAssertEqual(h.model.settings.folderID, "fixtureFolderA001")
+        let item = await h.queue.item(id: id)
+        XCTAssertEqual(item?.driveFileID, "fixtureDriveFileA0001")
+        XCTAssertEqual(h.authTransport.requests.count, 1, "only the code exchange; no revocation")
+    }
+
+    func testUnlinkingForgetsUploadSessionsButKeepsTheFolderOfThatAccount() async throws {
+        let h = try make(automatic: true, prepare: ownedByAccountA)
+        let id = try await partiallyUploadedChunk(h)
+
+        await h.model.unlinkDrive()
+
+        let session = await h.queue.sessionURI(for: id)
+        XCTAssertNil(session, "an upload session is a capability of the unlinked grant")
+        let item = await h.queue.item(id: id)
+        XCTAssertEqual(item?.driveFileID, "fixtureDriveFileA0001", "kept for the same account; another one resets it")
+        XCTAssertEqual(h.model.settings.folderID, "fixtureFolderA001")
+        XCTAssertEqual(h.model.settings.driveAccountEmail, AppAuthFixtures.email)
+    }
+
+    func testDriveStateOfAnotherAccountIsForgottenBeforeAnySync() async throws {
+        // A link that switched accounts and stopped before the old state was reset.
+        let fake = FakeSyncService()
+        let h = try make(network: .onWiFi, automatic: true, sync: fake, prepare: { settings in
+            try settings.update {
+                $0.folderID = "fixtureFolderB001"
+                $0.driveAccountEmail = "beto@otra.test"
+            }
+        })
+        let id = try await partiallyUploadedChunk(h)
+        XCTAssertNil(h.model.plannedTrigger(), "nothing runs with another account's Drive state")
+
+        await h.model.sceneBecameActive()
+        await h.model.waitUntilIdle()
+
+        XCTAssertEqual(fake.runs, [])
+        XCTAssertFalse(h.model.settings.automaticSync)
+        XCTAssertEqual(h.model.settings.driveAccountEmail, AppAuthFixtures.email)
+        XCTAssertNotEqual(h.model.settings.folderID, "fixtureFolderB001")
+        let item = await h.queue.item(id: id)
+        XCTAssertNil(item?.driveFileID)
+    }
+
     // MARK: - Review queue
 
     func testRetryingQuarantinedAudioPutsItBackInTheQueue() async throws {

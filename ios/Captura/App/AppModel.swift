@@ -127,6 +127,7 @@ final class AppModel {
         recorder.refreshPermission()
         network = await networkMonitor.current()
         await auth.refreshStatus()
+        await reconcileDriveAccount()
         await refreshLibrary()
         if pendingIntentStart {
             pendingIntentStart = false
@@ -149,6 +150,7 @@ final class AppModel {
     func runBackgroundSync() async -> Bool {
         // A fresh background launch has not seen the network yet.
         network = await networkMonitor.current()
+        await reconcileDriveAccount()
         await refreshLibrary()
         requestSync()
         await waitUntilIdle()
@@ -230,14 +232,19 @@ final class AppModel {
             return
         }
         do {
+            // Only a hint: the person may still pick another account in Google's sheet.
             try await auth.signIn(loginHint: linkedEmail)
         } catch {
             setMessage(auth.lastErrorMessage ?? GoogleAuthError.userMessage(for: error))
             return
         }
         driveNeedsRelink = false
+        let switchedAccount = await reconcileDriveAccount()
         setMessage("Drive vinculado. Preparando la carpeta privada «\(CaptureNaming.folderName)»…")
         await prepareFolder()
+        if switchedAccount, let email = linkedEmail, settings.folderID != nil {
+            setMessage("Se vinculó otra cuenta (\(email)). El Wi-Fi automático quedó apagado: activalo de nuevo si querés. La carpeta «\(CaptureNaming.folderName)» es nueva: copiá su ID para la Mac.")
+        }
     }
 
     func unlinkDrive() async {
@@ -252,8 +259,51 @@ final class AppModel {
             $0.automaticSync = false
             $0.manualRequestedAt = nil
         }
+        // Resumable sessions are capabilities of the grant just unlinked. Drive IDs and
+        // the folder stay: they are reused if the same account links again, and
+        // forgotten if another one does (`reconcileDriveAccount`).
+        try? await queue?.forgetRemoteUploads(keepingFileIDs: true)
         driveNeedsRelink = false
         setMessage(auth.lastErrorMessage ?? "Drive desvinculado. Los audios siguen en el iPhone; lo ya subido queda en tu Drive.")
+    }
+
+    /// Whether the folder ID and the queue's Drive state belong to the linked account
+    /// (true while nothing is recorded yet).
+    var driveStateMatchesLinkedAccount: Bool {
+        guard let owner = settings.driveAccountEmail, let email = linkedEmail else { return true }
+        return GoogleCredential.sameAccount(owner, email)
+    }
+
+    /// The folder ID, the queue's Drive IDs and upload sessions, and the automatic
+    /// upload consent all belong to one Google account. When another account is linked
+    /// (Google's sheet lets the person pick any account), they are forgotten: the
+    /// inbox is created again in the new account and automatic upload must be confirmed
+    /// again for it. Returns whether the account changed.
+    @discardableResult
+    private func reconcileDriveAccount() async -> Bool {
+        guard let email = linkedEmail else { return false }
+        guard let owner = settings.driveAccountEmail else {
+            updateSettings { $0.driveAccountEmail = email }
+            return false
+        }
+        guard !GoogleCredential.sameAccount(owner, email) else { return false }
+        await cancelSync()
+        if let queue {
+            do {
+                try await queue.forgetRemoteUploads()
+            } catch {
+                // Keep the mismatch recorded: nothing syncs until this succeeds.
+                setMessage("No se pudo actualizar la cola de subida para la cuenta nueva. Los audios siguen en el iPhone.")
+                return true
+            }
+        }
+        updateSettings {
+            $0.folderID = nil
+            $0.automaticSync = false
+            $0.manualRequestedAt = nil
+            $0.driveAccountEmail = email
+        }
+        return true
     }
 
     /// Creates or validates the inbox right after linking, so the Mac's `capture probe`
@@ -276,7 +326,7 @@ final class AppModel {
     }
 
     private func performPrepareFolder() async {
-        guard let sync, isLinked else { return }
+        guard let sync, isLinked, driveStateMatchesLinkedAccount else { return }
         isPreparingFolder = true
         defer { isPreparingFolder = false }
         do {
@@ -299,7 +349,8 @@ final class AppModel {
     }
 
     private func prepareFolderIfNeeded() {
-        guard canSync, isLinked, settings.folderID == nil, !driveNeedsRelink, folderTask == nil else { return }
+        guard canSync, isLinked, settings.folderID == nil, !driveNeedsRelink, folderTask == nil,
+              driveStateMatchesLinkedAccount else { return }
         Task { await prepareFolder() }
     }
 
@@ -376,7 +427,7 @@ final class AppModel {
     /// otherwise only the opted-in automatic sync, and only on Wi-Fi.
     func plannedTrigger() -> SyncTrigger? {
         // After Drive refused the grant, nothing runs until the person links again.
-        guard canSync, isLinked, !driveNeedsRelink else { return nil }
+        guard canSync, isLinked, !driveNeedsRelink, driveStateMatchesLinkedAccount else { return nil }
         if manualWindowOpen, let requested = settings.manualRequestedAt {
             return .manual(requestedAt: requested)
         }

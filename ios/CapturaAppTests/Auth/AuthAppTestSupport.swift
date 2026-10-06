@@ -43,12 +43,12 @@ enum AppAuthFixtures {
         return segment(["alg": "RS256"]) + "." + segment(claims) + ".fixture-signature"
     }
 
-    static func tokenResponse() -> HTTPResponse {
+    static func tokenResponse(email: String = AppAuthFixtures.email, refreshToken: String = AppAuthFixtures.refreshToken) -> HTTPResponse {
         let json: [String: Any] = [
             "access_token": accessToken,
             "expires_in": 3599,
             "refresh_token": refreshToken,
-            "id_token": idToken(),
+            "id_token": idToken(email: email),
             "scope": "openid https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/drive.file",
             "token_type": "Bearer",
         ]

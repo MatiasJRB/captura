@@ -77,12 +77,19 @@ public actor AccessTokenProvider: GoogleAccessTokenProviding {
     ///
     /// The account is rejected (and the fresh grant revoked best-effort) when Drive access
     /// was not granted, the email is not verified or the Workspace domain does not match.
+    ///
+    /// `login_hint` is only a hint: the person may pick another account in Google's
+    /// sheet. When that replaces a stored account, the replaced account's grant is
+    /// revoked best-effort, because once its refresh token is overwritten this device
+    /// could never revoke it again. The same account's previous token is not revoked:
+    /// that would end the new grant too.
     @discardableResult
     public func completeSignIn(callbackURL: URL, request: GoogleAuthorizationRequest) async throws -> GoogleAccount {
         guard request.configuration == configuration, request.endpoints == endpoints else {
             throw GoogleAuthError.invalidCallback
         }
         let code = try request.authorizationCode(from: callbackURL)
+        let previous = try? store.load()
         let response = try await tokenClient.exchange(code: code, verifier: request.pkce.verifier)
         let account: GoogleAccount
         do {
@@ -102,6 +109,9 @@ public actor AccessTokenProvider: GoogleAccessTokenProviding {
         refreshTask?.cancel()
         refreshTask = nil
         cached = CachedToken(value: response.accessToken, expiresAt: now().addingTimeInterval(response.expiresIn))
+        if let previous, !GoogleCredential.sameAccount(previous.accountEmail, account.email) {
+            try? await tokenClient.revoke(token: previous.refreshToken)
+        }
         return account
     }
 

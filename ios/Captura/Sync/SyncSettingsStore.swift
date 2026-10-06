@@ -9,6 +9,9 @@ struct SyncSettings: Codable, Equatable, Sendable {
     var deviceID: String
     /// The private inbox folder in Drive. The macOS worker's `folder_id` must match it.
     var folderID: String?
+    /// The Google account that `folderID` and the queue's Drive IDs and upload sessions
+    /// belong to. When another account is linked, all of that is forgotten.
+    var driveAccountEmail: String?
     /// Opt-in, confirmed by the person: upload closed chunks on Wi-Fi without asking.
     var automaticSync = false
     /// Last "Sincronizar ahora": cellular is allowed for 30 minutes after it.

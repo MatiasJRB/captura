@@ -91,6 +91,53 @@ final class AccessTokenProviderTests: XCTestCase {
         XCTAssertNil(try store.load())
     }
 
+    func testSigningInWithAnotherAccountRevokesThePreviousAccountsGrant() async throws {
+        let store = InMemoryTokenStore(storedCredential)
+        let other = AuthFixtures.idToken(AuthFixtures.claims(email: "beto@otra.test"))
+        let transport = AuthStubTransport([
+            AuthFixtures.tokenResponse(refreshToken: "fixture-other-refresh", idToken: other), HTTPResponse(status: 200),
+        ])
+        let provider = makeProvider(transport: transport, store: store)
+        let request = provider.makeAuthorizationRequest(loginHint: AuthFixtures.email)
+
+        let account = try await provider.completeSignIn(callbackURL: AuthFixtures.callbackURL(for: request), request: request)
+
+        XCTAssertEqual(account.email, "beto@otra.test")
+        XCTAssertEqual(try store.load()?.refreshToken, "fixture-other-refresh")
+        XCTAssertEqual(transport.requests.count, 2)
+        XCTAssertEqual(transport.requests.last?.url.absoluteString, "https://oauth2.googleapis.com/revoke")
+        XCTAssertEqual(transport.requests.last?.formFields["token"], AuthFixtures.refreshToken, "the replaced account's grant")
+    }
+
+    func testSigningInAgainWithTheSameAccountRevokesNothing() async throws {
+        // Revoking the same account's previous token would end the new grant too.
+        let store = InMemoryTokenStore(storedCredential)
+        let transport = AuthStubTransport([AuthFixtures.tokenResponse(refreshToken: "fixture-new-refresh")])
+        let provider = makeProvider(transport: transport, store: store)
+        let request = provider.makeAuthorizationRequest(loginHint: AuthFixtures.email)
+
+        try await provider.completeSignIn(callbackURL: AuthFixtures.callbackURL(for: request), request: request)
+
+        XCTAssertEqual(transport.requests.count, 1)
+        XCTAssertEqual(try store.load()?.refreshToken, "fixture-new-refresh")
+    }
+
+    func testFailedRevocationOfThePreviousAccountStillLinksTheNewOne() async throws {
+        let store = InMemoryTokenStore(storedCredential)
+        let other = AuthFixtures.idToken(AuthFixtures.claims(email: "beto@otra.test"))
+        let transport = AuthStubTransport(results: [
+            .success(AuthFixtures.tokenResponse(refreshToken: "fixture-other-refresh", idToken: other)),
+            .failure(URLError(.notConnectedToInternet)),
+        ])
+        let provider = makeProvider(transport: transport, store: store)
+        let request = provider.makeAuthorizationRequest()
+
+        let account = try await provider.completeSignIn(callbackURL: AuthFixtures.callbackURL(for: request), request: request)
+
+        XCTAssertEqual(account.email, "beto@otra.test")
+        XCTAssertEqual(try store.load()?.accountEmail, "beto@otra.test")
+    }
+
     func testRejectedSignInRevokesTheFreshGrant() async {
         let idToken = AuthFixtures.idToken(AuthFixtures.claims(hostedDomain: "otro.test"))
         let transport = AuthStubTransport([AuthFixtures.tokenResponse(idToken: idToken), HTTPResponse(status: 200)])

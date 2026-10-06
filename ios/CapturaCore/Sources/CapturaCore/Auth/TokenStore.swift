@@ -11,6 +11,11 @@ public struct GoogleCredential: Codable, Equatable, Sendable {
         self.refreshToken = refreshToken
         self.accountEmail = accountEmail
     }
+
+    /// Google account emails compare case-insensitively.
+    public static func sameAccount(_ first: String, _ second: String) -> Bool {
+        first.caseInsensitiveCompare(second) == .orderedSame
+    }
 }
 
 /// Secure persistence for the linked Google credential. The app uses the Keychain;
