@@ -268,6 +268,12 @@ final class AppModel {
         }
         driveNeedsRelink = false
         let switchedAccount = await reconcileDriveAccount()
+        if !switchedAccount {
+            // A new grant starts new upload sessions; sessions are capabilities of the grant
+            // that created them, and one Drive refuses would stop every run. Drive IDs stay,
+            // so an upload that already finished is still found instead of duplicated.
+            try? await queue?.forgetRemoteUploads(keepingFileIDs: true)
+        }
         setMessage("Drive vinculado. Preparando la carpeta privada «\(CaptureNaming.folderName)»…")
         await prepareFolder()
         if switchedAccount, let email = linkedEmail, settings.folderID != nil {

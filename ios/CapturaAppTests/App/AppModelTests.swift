@@ -307,7 +307,9 @@ final class AppModelTests: XCTestCase {
         XCTAssertTrue(h.model.settings.automaticSync)
         XCTAssertEqual(h.model.settings.folderID, "fixtureFolderA001")
         let item = await h.queue.item(id: id)
-        XCTAssertEqual(item?.driveFileID, "fixtureDriveFileA0001")
+        XCTAssertEqual(item?.driveFileID, "fixtureDriveFileA0001", "a finished upload is found, not duplicated")
+        let session = await h.queue.sessionURI(for: id)
+        XCTAssertNil(session, "the new grant starts a new upload session")
         XCTAssertEqual(h.authTransport.requests.count, 1, "only the code exchange; no revocation")
     }
 
