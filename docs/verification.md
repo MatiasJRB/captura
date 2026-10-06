@@ -143,3 +143,53 @@ account, Drive folder or microphone was used.
 Not verified: notices on a physical iPhone (lock screen, a real call, Focus modes),
 whether iOS wakes a suspended app for every interruption end, and the larger
 `large-v3-turbo` model on these chunks.
+
+## iOS and worker setup: fixes from a first-time install test — 2026-10-06
+
+A first-time install test followed `docs/ios.md` and `docs/worker.md` literally on a Mac
+with no Apple Account, Google account or rclone remote. Its findings were fixed in the
+guides, `ios/scripts/configure.py`, `ios/scripts/check.py`, `bin/capture` and the app's
+setup messages. Same Mac as above: macOS 26.1, **Xcode 26.1**, iPhone 17 simulator.
+
+Checked here:
+- `swift test`: 462 tests. Hosted app tests on the iPhone 17 simulator: 252 tests,
+  0 failures, 6 skipped (the opt-in microphone and speech tests, which were not run, so
+  no microphone audio was recorded; the Data Protection test; the configured-build test).
+- Device compile for `generic/platform=iOS` with `CODE_SIGNING_ALLOWED=NO`: with no
+  settings file and no team it builds, as before. With no settings file and
+  `DEVELOPMENT_TEAM` set, the build stops with the `SetupCheck.swift` message that points
+  to `configure.py`. With a fictional settings file written by `configure.py` and a team,
+  it builds. The fictional settings file was deleted afterwards.
+- Python: 18 tests in `worker/` and 91 in `tests/`, on Python 3.9.6 and 3.14.3; the
+  publication check. New tests cover `configure.py --force` keeping the saved team,
+  lowercase bundle IDs, `Already configured`, `--adopt-xcode-team` with Xcode's
+  upgrade stamps, the `check.py` summary when only the team is missing, `check.py --help`,
+  `capture set`, `init --root/--language`, pin placeholders and Drive folder links,
+  missing remote versus expired authorization, and the plain `Next:` lines.
+- The plain `Next:` / `Or:` lines were read through a pseudo-terminal: once split the
+  way a shell does, no argument keeps a literal quote character. With stdout and stderr
+  piped, stderr stays empty.
+- The step 3 `read` lines in zsh with piped fictional input (`Got 22 characters.`), not
+  with a real rclone or Google client.
+- `python3 scripts/check_public_tree.py --default-branch` in this clone **fails**:
+  `origin/main`, as last fetched, has no `docs/ios.md`, `ios/scripts/configure.py` or
+  `ios/scripts/check.py`. A fresh clone would not have them either. This is the
+  install test's blocker, and only merging and pushing the iOS branch fixes it. Nothing
+  was pushed.
+
+Still not verified (do these before handing the guides to someone, see
+[release](release.md#before-handing-out-the-setup-guides)):
+- Xcode 27 on macOS 26.6 or later. Whether it offers "Update to recommended settings"
+  for this project and which lines that changes. `--adopt-xcode-team` ignores only
+  `LastUpgradeCheck` and `LastSwiftUpdateCheck`; for anything else it prints the undo
+  command.
+- A free Personal Team: team detection from Xcode's preferences, Run on a physical
+  iPhone, Developer Mode, trusting the developer. Also whether Xcode registers the
+  placeholder bundle ID as soon as a team is picked in the Signing menu; the build-time
+  stop comes after that, so the guide's step 6.1 warning is the real protection.
+- Google sign-in with a real iOS client.
+- Doctor against a real rclone remote (type, scope, client ID shape, token, own client)
+  and its `ready_with_warnings` state: only fictional `rclone.conf` sections were used.
+  Whether the Desktop client sees the phone's `drive.file` uploads is still open.
+- The text of Homebrew's "Next steps" on Apple silicon. The two PATH lines in the worker
+  guide are the usual ones for `/opt/homebrew`; they were not run here.
