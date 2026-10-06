@@ -121,7 +121,10 @@ enum RecordingSpace {
     /// Space available for user-initiated content on the recordings volume, or nil
     /// when unknown (then nothing is blocked).
     static func available(at directory: URL) -> Int64? {
-        let values = try? directory.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey])
+        // A fresh URL each time: URL objects cache resource values, and the writer
+        // queue has no run loop pass that would clear that cache.
+        let url = URL(fileURLWithPath: directory.path, isDirectory: true)
+        let values = try? url.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey])
         return values?.volumeAvailableCapacityForImportantUsage
     }
 }

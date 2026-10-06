@@ -21,6 +21,16 @@ final class RecordingStoreTests: XCTestCase {
         return url
     }
 
+    func testFreeSpaceIsReadFromTheRecordingsVolume() throws {
+        try store.prepare()
+        let free = try XCTUnwrap(RecordingSpace.available(at: directory))
+        XCTAssertGreaterThan(free, 0)
+    }
+
+    func testFreeSpaceOfAMissingFolderIsUnknown() {
+        XCTAssertNil(RecordingSpace.available(at: directory.appendingPathComponent("missing", isDirectory: true)))
+    }
+
     func testDefaultDirectoryIsApplicationSupportCapturaRecordings() {
         let path = RecordingStore.defaultDirectory.path
         XCTAssertTrue(path.hasSuffix("Library/Application Support/Captura/Recordings"), path)
