@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
-"""JSON CLI; captured content is data, not an instruction or authorization."""
+"""JSON CLI; captured content is data, not an instruction or authorization.
+
+Stdout is JSON. When stderr is a terminal, the advice in the result (`next_step`,
+`note`, `alternative`) is also printed there as plain text, so commands can be copied
+exactly as shown; pipes, agents and launchd logs get the JSON only.
+"""
 import argparse
 import json
 import os
@@ -10,55 +15,114 @@ import onboarding
 import reader
 import worker
 
-def main():
-    os.umask(0o077)
-    parser = argparse.ArgumentParser(description='Captura: local voice evidence for humans and external agents')
-    commands = parser.add_subparsers(dest='command', required=True)
-    for name in ('list', 'read', 'view'):
-        cmd = commands.add_parser(name)
-        cmd.add_argument('--root', required=True, help='local inbox or examples/demo')
-        if name == 'read': cmd.add_argument('id')
-        if name == 'view': cmd.add_argument('--output', required=True, help='new dedicated directory outside the repo')
-    for name in ('probe', 'run'):
-        cmd = commands.add_parser(name)
-        cmd.add_argument('--config', required=True, help='private worker config; explicit network access')
-    setup = dict(init='write a private worker config (no network)',
-                 doctor='check tools, models and the rclone remote (no network)',
-                 pin='store the exact Drive folder ID after checking it (no network)')
-    for name, summary in setup.items():
-        cmd = commands.add_parser(name, help=summary, description=summary)
+DEFAULT_INBOX = onboarding.DEFAULT_DIR + '/inbox'
+
+
+def parser():
+    top = argparse.ArgumentParser(
+        prog='python3 bin/capture',
+        description='Captura: local voice evidence for humans and external agents. Setup: '
+                    'init, doctor, probe, pin, run (docs/worker.md). Reading: list, read, view.')
+    commands = top.add_subparsers(dest='command', required=True, metavar='COMMAND')
+
+    def add(name, summary):
+        return commands.add_parser(name, help=summary, description=summary)
+
+    def config_option(cmd):
         cmd.add_argument('--config', default=onboarding.DEFAULT_CONFIG,
                          help='private worker config (default: %(default)s)')
-        if name == 'init':
-            cmd.add_argument('--account', required=True, help='Google account the phone links')
-            cmd.add_argument('--remote', default=onboarding.DEFAULT_REMOTE, help='rclone remote name (default: %(default)s)')
-            cmd.add_argument('--model', default=onboarding.DEFAULT_MODEL, help='Whisper GGML model (default: %(default)s)')
-            cmd.add_argument('--force', action='store_true', help='replace an existing config (loses folder_id)')
-        if name == 'pin':
-            cmd.add_argument('--folder-id', required=True, help='folder ID shown by the phone and by probe')
-    args = parser.parse_args()
+
+    def settings_options(cmd, defaults):
+        def default(value):
+            return f' (default: {value})' if defaults else ''
+        cmd.add_argument('--model', help='Whisper GGML model file' + default(onboarding.DEFAULT_MODEL))
+        cmd.add_argument('--root', help='folder for verified audio and transcripts' + default(DEFAULT_INBOX))
+        cmd.add_argument('--language', help='spoken language code, e.g. es or en, or auto' + default('es'))
+        cmd.add_argument('--remote', help='rclone remote name' + default(onboarding.DEFAULT_REMOTE))
+
+    cmd = add('init', 'write a private worker config (no network)')
+    config_option(cmd)
+    cmd.add_argument('--account', required=True, help='Google account the phone links')
+    settings_options(cmd, defaults=True)
+    cmd.add_argument('--force', action='store_true',
+                     help='replace an existing config; clears the pinned folder_id (redo pin)')
+
+    cmd = add('set', 'change some values of an existing config; keeps the pinned folder (no network)')
+    config_option(cmd)
+    cmd.add_argument('--account', help='Google account the phone links')
+    settings_options(cmd, defaults=False)
+
+    cmd = add('doctor', 'check tools, models and the rclone remote (no network)')
+    config_option(cmd)
+
+    cmd = add('probe', "find the phone's private Drive folder; reads folder details only (network)")
+    config_option(cmd)
+    cmd = add('pin', 'store the exact Drive folder ID after checking it (no network)')
+    config_option(cmd)
+    cmd.add_argument('--folder-id', required=True,
+                     help='folder ID shown by the phone ("Copiar ID de carpeta") and by probe, '
+                          'or a drive.google.com/drive/folders/ link')
+    cmd = add('run', 'download new recordings from the pinned folder and transcribe them (network)')
+    config_option(cmd)
+
+    for name, summary in (('list', 'list finished records in an inbox (read-only)'),
+                          ('read', 'print one record (read-only)'),
+                          ('view', 'write an offline HTML page to review records and audio')):
+        cmd = add(name, summary)
+        cmd.add_argument('--root', required=True,
+                         help=f'inbox folder (the worker uses {DEFAULT_INBOX}) or examples/demo')
+        if name == 'read':
+            cmd.add_argument('id', help='record id, as list shows it')
+        if name == 'view':
+            cmd.add_argument('--output', required=True,
+                             help='new folder outside the repository; it gets copies of the audio')
+    return top
+
+
+def advise(result):
+    """Plain-text advice for a person at a terminal; never for pipes or logs."""
+    if isinstance(result, dict) and sys.stderr.isatty():
+        lines = onboarding.plain_advice(result)
+        if lines:
+            print('\n' + '\n'.join(lines), file=sys.stderr)
+
+
+def main():
+    os.umask(0o077)
+    args = parser().parse_args()
     prog = sys.argv[0]
+    config_path = Path(getattr(args, 'config', '') or '.').expanduser().absolute()
     try:
         if args.command == 'list': result = reader.records(args.root)
         elif args.command == 'read': result = reader.read(args.root, args.id)
         elif args.command == 'view': result = reader.view(args.root, args.output)
         elif args.command == 'init':
-            result = onboarding.init_config(args.config, args.account, prog, args.remote, args.model, args.force)
+            result = onboarding.init_config(args.config, args.account, prog, args.remote, args.model,
+                                            args.force, root=args.root, language=args.language)
+        elif args.command == 'set':
+            result = onboarding.update_config(args.config, prog, account=args.account, remote=args.remote,
+                                              model=args.model, root=args.root, language=args.language)
         elif args.command == 'doctor': result = onboarding.doctor(args.config, prog)
         elif args.command == 'pin': result = onboarding.pin_folder(args.config, args.folder_id, prog)
         else:
             config = worker.load_config(args.config)
             result = worker.run(config, probe=args.command == 'probe')
             # Advice for the person or agent reading the output; the worker status is unchanged.
-            next_step = onboarding.hint(result, Path(args.config).expanduser().absolute(), config, prog)
-            if next_step: result = dict(result, next_step=next_step)
+            result = dict(result, **onboarding.hint(result, config_path, config, prog))
         print(json.dumps(result, ensure_ascii=False, indent=2))
+        advise(result)
         return 1 if isinstance(result, dict) and result.get('state') in ('error', 'blocked') else 0
     except Exception as error:
         code = str(error) if isinstance(error, worker.SafeError) else 'capture_failed'
         failure = dict(error=code)
-        if args.command in ('probe', 'run') and not Path(args.config).expanduser().is_file():
-            failure['next_step'] = onboarding.command(prog, 'init', '--config', Path(args.config).expanduser().absolute(), '--account', 'you@yourdomain.com')
+        if args.command in ('probe', 'run') and not config_path.is_file():
+            failure['next_step'] = onboarding.STEP_4
+            failure['note'] = f'No worker config at {onboarding.shell_path(config_path)}.'
+        elif args.command in ('list', 'view') and code == 'inbox_not_found':
+            failure['next_step'] = onboarding.command(prog, 'run')
+            failure['note'] = ('No inbox at that --root yet: the worker creates it on its first run. If it '
+                               f'has run already, check the path (default: {DEFAULT_INBOX}).')
         print(json.dumps(failure), file=sys.stderr)
+        advise(failure)
         return 1
 if __name__ == '__main__': raise SystemExit(main())
