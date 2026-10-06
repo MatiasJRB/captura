@@ -5,7 +5,12 @@
 // It must match the bundle ID of your Google "iOS" OAuth client.
 CAPTURA_BUNDLE_ID = com.example.captura
 
-// Optional: your Apple team ID. Leave empty and pick your team in Xcode instead.
+// Your Apple team ID (a free Personal Team works). Set it here, not with the Team
+// menu in Xcode's Signing & Capabilities tab: that menu writes the ID into the tracked
+// ios/Captura.xcodeproj/project.pbxproj, and a later `git pull` then stops on it.
+// To find a Personal Team ID: pick the team in that menu once, copy the value of
+// DEVELOPMENT_TEAM from `git diff ios/Captura.xcodeproj/project.pbxproj`, paste it here,
+// then undo the project change with `git checkout -- ios/Captura.xcodeproj/project.pbxproj`.
 CAPTURA_DEVELOPMENT_TEAM =
 
 // From your Google Cloud "iOS" OAuth client (Client ID and iOS URL scheme).
