@@ -12,7 +12,7 @@ import re
 import subprocess
 import sys
 root=Path(__file__).resolve().parents[1]
-HANDOUT=('docs/ios.md','docs/worker.md','ios/scripts/configure.py','ios/scripts/check.py','bin/capture')
+HANDOUT=('docs/ios.md','docs/worker.md','ios/scripts/configure.py','ios/scripts/check.py','bin/capture','scripts/secret_refs.py')
 
 def git(*args):
     return subprocess.run(['git',*args],cwd=root,capture_output=True,text=True)

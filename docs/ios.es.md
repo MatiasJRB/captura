@@ -68,6 +68,19 @@ ls ios/scripts
    Si tu cuenta de Google es de una empresa (Google Workspace), agregá al final
    `--hosted-domain` y tu dominio (lo que va después de la @ en tu correo de trabajo).
 
+   **Desde un gestor de contraseñas (lo recomendado si el administrador te compartió un
+   ítem).** Si el ID de cliente está en un ítem de 1Password, con el campo
+   `ios_client_id` (y, si quiere, `bundle_id` y `hosted_domain`), leelo desde ahí en
+   lugar de pegarlo. Poné la bóveda y el nombre del ítem en lugar del ejemplo:
+
+   ```sh
+   python3 ios/scripts/configure.py --bundle-id com.yourname.captura --from "op://Captura/Captura iOS"
+   ```
+
+   Si el ítem tiene `bundle_id`, sacá `--bundle-id`. Hace falta el CLI de 1Password con
+   1Password > Settings > Developer > **Integrate with 1Password CLI** activado. Si los
+   campos tienen otros nombres, usá `--field-map` (detalles en la guía completa).
+
 - Si dice `Not changed:`, quedó un valor de ejemplo o hay un error (mayúsculas, tildes,
   espacios). El mensaje dice cuál: corregilo y volvé a correr el comando.
 - Si dice `No Apple team found in Xcode yet`, revisá el paso 1.3 y corré
@@ -124,6 +137,10 @@ de Apple y después **Confiar**. Abrí Captura.
 3. Activá **Sincronizar automáticamente por Wi-Fi**.
 4. Tocá **Copiar ID de carpeta**: lo vas a usar en la Mac.
 5. Seguí con el [worker en la Mac](worker.md) (en inglés), que descarga y transcribe.
+   En su paso 3, `python3 bin/capture drive-setup --from "op://Captura/Captura worker OAuth"`
+   (con la bóveda y el ítem que te compartió el administrador) lee el ID y el secreto del
+   cliente de escritorio sin mostrarlos. Sin ítem, el mismo comando sin `--from` te los
+   pide y el secreto no se ve al pegarlo.
 
 ## Cada 7 días
 

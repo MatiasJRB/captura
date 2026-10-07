@@ -227,3 +227,29 @@ the labels of a Spanish macOS 26.6 (Configuración del Sistema, Acerca de esta M
 Usuarios y grupos, Permitir siempre), which follow Apple's Latin American Spanish naming
 but were not seen on a Mac set to Spanish. `check_public_tree.py --default-branch` still
 fails here until the iOS branch is merged and pushed.
+
+## Setup values from a password manager — 2026-10-07
+
+`ios/scripts/configure.py --from` and the new `capture drive-setup` read setup values
+through `scripts/secret_refs.py`: `op://Vault/Item/field` (`op read`), `op://Vault/Item`
+(`op item get --format json`, keeping only the named fields), `keychain://service/account`
+(`security find-generic-password -w`), `env:NAME`, or a hidden prompt. drive-setup writes
+the rclone remote into rclone's config file (mode 0600, atomic replace, other remotes
+kept), refuses to replace one without `--force`, runs `rclone config reconnect` and
+reports only non-secret facts. Doctor and probe offer it when the remote is missing.
+
+Checked here (macOS 26.1, Python 3.9.6 and 3.12):
+- Python: 18 tests in `worker/` and 130 in `tests/`; the publication check; `swift test`
+  in `ios/CapturaCore` (462 tests, unchanged code).
+- With fake `op`, `security` and `rclone` on PATH that log their arguments and
+  environment: the secret never reaches a child's argv or environment, stdout, stderr or
+  an error; the config file is 0600 in a 0700 folder; overwrite refusal and `--force`;
+  `--field-map`; Keychain and `env:` references; missing or signed-out `op`; missing
+  item, field or Keychain entry; malformed values refused without echoing them; failed
+  sign-in; encrypted rclone configs left alone; `configure.py --from` validated like the
+  flags, with explicit flags winning.
+
+Not verified: the real 1Password CLI against a real item (its error texts are matched by
+phrase, so an unrecognized one falls back to a generic message), the real Keychain, and a
+real `rclone config reconnect` sign-in with a Desktop client, including which questions
+rclone asks first.

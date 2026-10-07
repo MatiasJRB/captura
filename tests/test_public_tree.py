@@ -13,7 +13,8 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
 GIT = shutil.which('git')
-HANDOUT = ('docs/ios.md', 'docs/worker.md', 'ios/scripts/configure.py', 'ios/scripts/check.py', 'bin/capture')
+HANDOUT = ('docs/ios.md', 'docs/worker.md', 'ios/scripts/configure.py', 'ios/scripts/check.py', 'bin/capture',
+           'scripts/secret_refs.py')
 
 
 @unittest.skipUnless(GIT, 'git is required')

@@ -616,7 +616,7 @@ class HelpTests(unittest.TestCase):
     def test_every_command_has_help(self):
         result = subprocess.run([sys.executable, CLI, '--help'], capture_output=True, text=True)
         self.assertEqual(result.returncode, 0)
-        for name in ('init', 'set', 'doctor', 'probe', 'pin', 'run', 'list', 'read', 'view'):
+        for name in ('drive-setup', 'init', 'set', 'doctor', 'probe', 'pin', 'run', 'list', 'read', 'view'):
             with self.subTest(command=name):
                 self.assertRegex(result.stdout, rf'\n\s+{name}\s+\S')
                 sub = subprocess.run([sys.executable, CLI, name, '--help'], capture_output=True, text=True)

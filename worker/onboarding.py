@@ -66,6 +66,9 @@ LABELS = {
 LANGUAGE = re.compile(r'[a-z]{2,3}|auto')
 REMOTE_NAME = re.compile(r'[A-Za-z0-9_. +@-]{1,64}')
 STEP_3 = 'Do step 3 of docs/worker.md (Connect rclone to Google Drive).'
+DRIVE_SETUP_NOTE = ('drive-setup writes the rclone remote from the Desktop client in a password manager item '
+                    '(add --from with the item the admin shared), or asks for the client ID and the hidden '
+                    'secret, then opens the Google sign-in (docs/worker.md step 3).')
 STEP_4 = 'Create the worker config first: docs/worker.md step 4 (capture init with the Google account the phone links).'
 # What the docs and messages use as stand-ins; never a real Drive folder ID.
 PLACEHOLDER_WORDS = ('paste', 'folder', 'example')
@@ -110,6 +113,16 @@ def command(prog, *parts):
     for part in parts:
         words.append(shell_path(part) if isinstance(part, Path) else shlex.quote(str(part)))
     return ' '.join(words)
+
+
+def drive_setup_command(prog, config_path=None, remote=None, *parts):
+    """`python3 bin/capture drive-setup` with --config and --remote only when not the defaults."""
+    words = ['drive-setup']
+    if config_path and Path(os.path.expanduser(str(config_path))) != Path(os.path.expanduser(DEFAULT_CONFIG)):
+        words += ['--config', Path(os.path.expanduser(str(config_path)))]
+    if remote and remote != DEFAULT_REMOTE:
+        words += ['--remote', remote]
+    return command(prog, *words, *parts)
 
 
 def _write_private_json(path, data, replace):
@@ -386,17 +399,19 @@ def _check_model(checks, name, value, minimum, maximum=None, prog=None, config_p
         checks.append(dict(check=name, status=OK, detail=f'{_home_relative(path)} ({human})'))
 
 
-def inspect_remote(config):
-    """The rclone remote as one check: {check, status, detail, next_step[, note]}.
+def inspect_remote(config, prog=None, config_path=None):
+    """The rclone remote as one check: {check, status, detail, next_step[, note, alternative]}.
 
     Reads only the section's type, scope, the client ID's shape and whether a token exists.
+    With `prog`, a missing remote also gets the drive-setup command as `alternative`.
     """
     conf = Path(os.path.expanduser(config.get('rclone_config', '')))
     remote = config.get('remote', '')
     name = shlex.quote(remote)
     account = config.get('expected_account') or 'the account the phone links'
-    recreate = (f'Remove it with "rclone config delete {remote}", then do step 3 of docs/worker.md '
-                '(Connect rclone to Google Drive) again.')
+    setup = drive_setup_command(prog or 'bin/capture', config_path, remote)
+    recreate = (f'Replace it with "{setup} --force", or remove it with "rclone config delete {remote}" and do '
+                'step 3 of docs/worker.md (Connect rclone to Google Drive) again.')
 
     def result(status, detail, next_step=None, note=None):
         check = dict(check='rclone_remote', status=status, detail=detail)
@@ -404,6 +419,10 @@ def inspect_remote(config):
             check['next_step'] = next_step
         if note:
             check['note'] = note
+        if next_step == STEP_3 and prog:
+            # Step 3 starts with this command; Or: makes it one paste away.
+            check['alternative'] = setup
+            check['note'] = DRIVE_SETUP_NOTE
         return check
 
     if not conf.is_file():
@@ -509,7 +528,7 @@ def doctor(path, prog):
         checks.append(dict(check='transcribe', status=WARN, detail='transcription is off',
                            next_step=f'Set "transcribe": true in {shown} to get text, not only audio.'))
     if _check_tool(checks, 'rclone', config.get('rclone', 'rclone'), 'brew install rclone'):
-        checks.append(inspect_remote(config))
+        checks.append(inspect_remote(config, prog, shown))
     folder = config.get('folder_id') or ''
     if folder:
         try:
@@ -563,14 +582,15 @@ def _summary(checks, path, prog, config):
 
 SCOPE_HINT = ('If the phone already shows a folder ID, rclone cannot see it: with scope=drive.file the '
               'grant may not be shared between the phone and desktop clients. Recreate the remote with '
-              'scope=drive.readonly (docs/worker.md step 3), then probe again.')
+              'scope=drive.readonly (docs/worker.md step 3: drive-setup with --scope drive.readonly --force), '
+              'then probe again.')
 
 
-def _authorization_advice(config):
+def _authorization_advice(config, prog=None, config_path=None):
     """Tells "no remote yet" apart from "authorization expired or revoked"."""
     if not _executable((config or {}).get('rclone', 'rclone')):
         return dict(next_step='brew install rclone', note='rclone is not installed where the config says.')
-    remote = inspect_remote(config or {})
+    remote = inspect_remote(config or {}, prog, config_path)
     if remote['status'] == FAIL:
         advice = {key: remote[key] for key in ADVICE if key in remote}
         advice.setdefault('note', 'rclone has no usable authorization: ' + remote['detail'] + '.')
@@ -605,7 +625,7 @@ def hint(result, config_path, config, prog):
                               'for "Copiar ID de carpeta". ' + SCOPE_HINT)
     code = errors[0] if errors else ''
     if code in ('existing_drive_authorization_unavailable', 'existing_drive_authorization_expired'):
-        return _authorization_advice(config)
+        return _authorization_advice(config, prog, config_path)
     hints = {
         'drive_account_mismatch': dict(
             next_step=f'rclone config reconnect {remote}:',

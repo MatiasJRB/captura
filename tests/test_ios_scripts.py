@@ -5,6 +5,7 @@ isolated from the user's configuration. No network, no real Apple or Google acco
 """
 import contextlib
 import io
+import json
 import os
 from pathlib import Path
 import plistlib
@@ -59,7 +60,7 @@ class Sandbox(unittest.TestCase):
         tmp = Path(self._tmp.name)
         self.repo = tmp / 'repo'
         for rel in (PROJECT, SCHEME, 'ios/Config/Captura.base.xcconfig', 'ios/scripts/configure.py',
-                    'ios/scripts/check.py'):
+                    'ios/scripts/check.py', 'scripts/secret_refs.py'):
             (self.repo / rel).parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(ROOT / rel, self.repo / rel)
         (self.repo / '.gitignore').write_text(LOCAL + '\n')
@@ -344,6 +345,88 @@ class ConfigureTests(Sandbox):
         result = self.configure('--adopt-xcode-team')
         self.assertEqual(result.returncode, 1)
         self.assertIn('Signing & Capabilities', result.stderr)
+
+
+def op_item(fields):
+    """`op item get --format json` output for a fictional item."""
+    return json.dumps(dict(id='fictionalitemid', title='Captura iOS', fields=[
+        dict(id=f'f{i}', label=label, type='STRING', value=value) for i, (label, value) in enumerate(fields.items())]))
+
+
+ITEM = 'op://Captura/Captura iOS'
+
+
+class ConfigureFromTests(Sandbox):
+    """configure.py --from: the values come from a password manager item."""
+
+    def item(self, fields=None, rc=0, stderr=''):
+        fields = {'bundle_id': BUNDLE, 'ios_client_id': CLIENT} if fields is None else fields
+        self.tools(teams=personal_teams(TEAM), extra={
+            'op': [{'match': ['item', 'get', 'Captura iOS', '--vault', 'Captura'], 'rc': rc, 'stderr': stderr,
+                    'stdout': '' if rc else op_item(fields)}],
+            'security': [
+                {'match': ['find-generic-password', '-s', 'Captura iOS', '-a', 'bundle_id', '-w'], 'stdout': BUNDLE + '\n'},
+                {'match': ['find-generic-password', '-s', 'Captura iOS', '-a', 'ios_client_id', '-w'],
+                 'stdout': CLIENT + '\n'},
+                {'match': ['find-generic-password'], 'rc': 44,
+                 'stderr': 'security: The specified item could not be found in the keychain.\n'}]})
+
+    def test_from_an_item_writes_the_same_settings_as_the_flags(self):
+        self.item(dict(bundle_id=BUNDLE, ios_client_id=REVERSED, hosted_domain='Fictional-Company.TEST'))
+        result = self.configure('--from', ITEM)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn(f'Read bundle_id, ios_client_id, hosted_domain from {ITEM}.', result.stdout)
+        values = self.local()
+        self.assertEqual((values['CAPTURA_BUNDLE_ID'], values['CAPTURA_GOOGLE_IOS_CLIENT_ID'],
+                          values['CAPTURA_GOOGLE_HOSTED_DOMAIN'], values['CAPTURA_DEVELOPMENT_TEAM']),
+                         (BUNDLE, CLIENT, 'fictional-company.test', TEAM))
+
+    def test_explicit_flags_win_over_the_item(self):
+        self.item(dict(bundle_id='org.other.captura', ios_client_id=CLIENT, hosted_domain='fictional.test'))
+        result = self.configure('--from', ITEM, '--bundle-id', BUNDLE, '--hosted-domain', '')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.local()['CAPTURA_BUNDLE_ID'], BUNDLE)
+        self.assertEqual(self.local()['CAPTURA_GOOGLE_HOSTED_DOMAIN'], '')
+        self.assertIn('Read ios_client_id from', result.stdout)
+
+    def test_field_map_and_keychain_service(self):
+        self.item({'Bundle': BUNDLE, 'iOS client ID': CLIENT})
+        result = self.configure('--from', ITEM, '--field-map', 'bundle_id=Bundle',
+                                '--field-map', 'ios_client_id=iOS client ID')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.local()['CAPTURA_GOOGLE_IOS_CLIENT_ID'], CLIENT)
+        result = self.configure('--from', 'keychain://Captura iOS', '--force')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('Read bundle_id, ios_client_id from keychain://Captura iOS.', result.stdout)
+
+    def test_item_values_get_the_same_validation(self):
+        self.item(dict(bundle_id='com.example.captura', ios_client_id=CLIENT))
+        result = self.configure('--from', ITEM)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn('Not changed: "com.example.captura" is an example', result.stderr)
+        self.assertFalse((self.repo / LOCAL).exists())
+        self.item(dict(bundle_id=BUNDLE))
+        result = self.configure('--from', ITEM)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('Nothing was written.', result.stdout)
+        self.item(dict(ios_client_id=CLIENT))
+        result = self.configure('--from', ITEM)
+        self.assertIn('has no "bundle_id" field', result.stderr)
+
+    def test_signed_out_op_and_missing_item_explain_what_to_do(self):
+        self.item(rc=1, stderr='[ERROR] 2026/10/07 12:00:00 account is not signed in\n')
+        result = self.configure('--from', ITEM)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn('Not changed: The 1Password CLI is not signed in.', result.stderr)
+        self.item(rc=1, stderr='[ERROR] "Captura iOS" isn\'t an item in the "Captura" vault.\n')
+        self.assertIn('no item "Captura iOS"', self.configure('--from', ITEM).stderr)
+        self.assertFalse((self.repo / LOCAL).exists())
+        self.assertNotIn('Traceback', result.stderr)
+
+    def test_field_map_needs_from(self):
+        result = self.configure('--field-map', 'bundle_id=Bundle')
+        self.assertEqual(result.returncode, 2)
+        self.assertIn('--field-map needs --from', result.stderr)
 
 
 class TeamDetectionTests(Sandbox):
