@@ -19,9 +19,14 @@ The guides are the source of truth: `docs/ios.md` (Spanish summary `docs/ios.es.
   person runs or explicitly approves first.
 - Secrets: never ask for, accept, repeat or store the Desktop client secret, OAuth
   tokens, or Apple, Google or Mac passwords and codes. The person types them only into
-  Terminal prompts, rclone, the browser, Xcode or the iPhone. Never print `rclone.conf`,
-  never run `rclone config show`, never put a secret on a command line. If they paste a
-  secret into the chat, don't repeat or use it, and tell them to ask the admin for a new one.
+  Terminal prompts, rclone, the browser, Xcode or the iPhone, or the scripts read them
+  from their password manager. Never print `rclone.conf`, never run `rclone config show`,
+  `op read`, `op item get` or `security find-generic-password` yourself, and never put a
+  secret on a command line. If they paste a secret into the chat, don't repeat or use it,
+  and tell them to ask the admin for a new one.
+- A password manager reference (`op://Vault/Item`, `keychain://service`) names where a
+  value lives; it is not a secret, so you may ask for it and put it in commands. Prefer
+  the `--from` path when the admin shared an item; keep the manual path otherwise.
 - Bundle ID, iOS client ID, Apple team ID and Drive folder ID are identifiers, not
   secrets. Use only the person's real values; never invent one or keep a guide example.
 - Never commit or share `ios/Config/Captura.local.xcconfig`, the worker config,
@@ -43,7 +48,8 @@ python3 bin/capture doctor
 No `~/captura`: start at iPhone step 3. Otherwise skip what check.py marks `ok` and what
 doctor's JSON (`state`, `checks`, `next_step`, `also_failing`) shows as done. Ask who the
 Google admin is, whether they have the iOS client ID, whether the Desktop client ID and
-secret are in a password manager item, and which Google account the phone will link.
+secret are in a password manager item (and its reference, e.g. `op://Vault/Item`), and
+which Google account the phone will link.
 
 ## 1. iPhone (`docs/ios.md`)
 
@@ -55,9 +61,13 @@ secret are in a password manager item, and which Google account the phone will l
 - **4.1** Bundle ID: `com.` + their name + `.captura`, lowercase, no accents. Check it
   (writes nothing): `python3 ios/scripts/configure.py --bundle-id com.NAME.captura`. They
   send the printed value to the admin, who creates the iOS client and sends its client ID.
-- **4.2** `python3 ios/scripts/configure.py --bundle-id com.NAME.captura --google-client-id CLIENT_ID`,
+- **4.2** With an item from the admin (field `ios_client_id`, optional `bundle_id`,
+  `hosted_domain`): `python3 ios/scripts/configure.py --bundle-id com.NAME.captura --from "op://VAULT/ITEM"`
+  (drop `--bundle-id` if the item has it; `--field-map` for other field names). Without
+  one: `python3 ios/scripts/configure.py --bundle-id com.NAME.captura --google-client-id CLIENT_ID`,
   plus `--hosted-domain DOMAIN` for a Google Workspace. `Already configured`: add
-  `--force` only if they want to replace it.
+  `--force` only if they want to replace it. `The 1Password CLI is not signed in`: they
+  turn on 1Password > Settings > Developer > Integrate with 1Password CLI.
 - **5.** `python3 ios/scripts/check.py` until `Ready.`. Only `Apple team` failing: go on.
 - **6.** `open ios/Captura.xcodeproj`. "Update to recommended settings": Not Now or
   Cancel, never Perform Changes. Captura target > Signing & Capabilities: Team "(Personal
@@ -81,16 +91,21 @@ admin)" in `docs/ios.md`: they click in the console, you explain.
    run `brew install whisper.cpp ffmpeg rclone`.
 2. Models: show the `mkdir` and two `curl` lines of step 2 (about 1.6 GB); they run them
    or approve. Slow Mac: `ggml-large-v3-turbo-q5_0.bin` or `ggml-small.bin`.
-3. rclone: they run the four lines of step 3 in their own Terminal window, not through
-   your shell, with the password manager item open, and paste the client ID and secret
-   at the prompts there. Ignore rclone's Redirect URL NOTICE. In the browser they sign
+3. rclone: in their own Terminal window, not through your shell (it opens the browser
+   sign-in), they run `python3 bin/capture drive-setup --from "op://VAULT/ITEM"` with the
+   item the admin shared (fields `client_id`, `client_secret`; `--field-map` otherwise).
+   Without an item, `python3 bin/capture drive-setup` asks for the ID and the hidden
+   secret; the four manual lines of step 3 remain a fallback. Expect
+   `drive_remote_ready`; `remote_exists` means a remote is there already (doctor first,
+   `--force` to replace). Ignore rclone's Redirect URL NOTICE. In the browser they sign
    in with the account the phone linked. Confirm with doctor, never by reading files.
 4. `python3 bin/capture init --account THEIR-ADDRESS` (the phone shows it under "Cuenta").
 5. `python3 bin/capture doctor` until `ready_with_warnings` with only `folder_id` warning.
    Otherwise follow the first failure's `next_step` and run doctor again.
 6. After the phone uploaded a recording: `python3 bin/capture probe`. Expect
    `private_inbox_verified` and a `folder_id`. `waiting_for_phone_folder` while the
-   phone shows a folder ID: they recreate the remote with `drive.readonly` (end of step 3).
+   phone shows a folder ID: they recreate the remote with `drive.readonly` (end of step 3:
+   drive-setup with `--scope drive.readonly --force`).
 7. They compare probe's `folder_id` with the phone's; then run probe's `pin` command.
 8. `python3 bin/capture run`, again until done (each run imports at most 3, transcribes 1).
 
@@ -108,6 +123,8 @@ copies the audio into its output folder: keep that folder private.
 ## When something fails
 
 - check.py `FAIL`: its `Next:` line; `docs/ios.md` steps 5–7.
+- drive-setup `secret_unavailable`: its `Next:` line (op missing or signed out, item or
+  field missing, no terminal). `rclone_sign_in_failed`: the `rclone config reconnect` line.
 - configure.py `Not changed`: the named value is an example, a placeholder or malformed.
   Ask for the real value.
 - A message in Xcode, from Google or on the iPhone: find its exact text in the

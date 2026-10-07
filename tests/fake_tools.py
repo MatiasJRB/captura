@@ -4,7 +4,9 @@
 `spec[name]`: a list of rules `{"match": [args...], "stdout", "stderr", "rc",
 "json_output": {...}}`; the first rule whose `match` items all appear in the arguments wins.
 Unknown invocations exit 127, like a missing command. Reuse one directory across tests
-and only the spec changes: the shims themselves are written once.
+and only the spec changes: the shims themselves are written once. With FAKE_TOOLS_LOG set
+in the environment, every call appends {"tool", "args", "env"} as one JSON line there, so
+tests can check what reached a child process.
 """
 import json
 import os
@@ -16,6 +18,9 @@ import json, os, sys
 spec = json.load(open({spec!r}))
 name = os.path.basename(sys.argv[0])
 args = sys.argv[1:]
+if os.environ.get('FAKE_TOOLS_LOG'):
+    with open(os.environ['FAKE_TOOLS_LOG'], 'a') as log:
+        log.write(json.dumps(dict(tool=name, args=args, env=dict(os.environ))) + '\\n')
 for rule in spec.get(name, []):
     if all(item in args for item in rule.get('match', [])):
         if 'json_output' in rule and '--json-output' in args:

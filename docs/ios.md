@@ -127,6 +127,25 @@ ls ios/scripts
    domain (the part after @ in your work address) at the end. The app will then only
    accept accounts from that domain.
 
+   **From a password manager item (recommended when the admin shares one).** If the
+   admin saved the client ID in a 1Password item, with the field `ios_client_id` (and
+   optionally `bundle_id` and `hosted_domain`), read the values from the item instead
+   of pasting them. Use the item's vault and name in place of the example:
+
+   ```sh
+   python3 ios/scripts/configure.py --bundle-id com.yourname.captura --from "op://Captura/Captura iOS"
+   ```
+
+   Leave out `--bundle-id` if the item has a `bundle_id` field. Values you pass as
+   options win over the item. Fields with other names: add, for example,
+   `--field-map ios_client_id="iOS client ID"`. `--from "keychain://Captura iOS"` reads
+   the macOS Keychain instead (one password per field, with the field name as the
+   account). This needs the [1Password CLI](https://developer.1password.com/docs/cli)
+   with 1Password > Settings > Developer > **Integrate with 1Password CLI** turned on;
+   the script prints `Read ... from op://...` and then the same summary as above. If it
+   says `Not changed: The 1Password CLI is not signed in` or `has no item`, do what the
+   message says and run it again.
+
 - *You should see:* `Wrote ios/Config/Captura.local.xcconfig`, a summary of your values,
   and `Using the team Xcode knows: ABCDE12345 (Your Name (Personal Team))`.
 - *If it says `No Apple team found in Xcode yet`:* finish step 1.3, then run
@@ -362,10 +381,14 @@ a **Desktop** client for rclone on the Mac. Both clients must be in the **same p
 5. Create the **Desktop** client for the Mac worker: Clients > Create client >
    Application type **Desktop app**. Copy its **Client ID** and **Client secret** and
    give them to whoever sets up the worker through a password manager: save both in one
-   item (for example in 1Password) and share that item with them. They paste the
-   values from there at [worker step 3](worker.md#3-connect-rclone-to-google-drive).
-   Treat the secret like a password: don't send it by chat or email, and don't put it in
-   the repository.
+   item (for example in 1Password), in fields named `client_id` and `client_secret`, and
+   share that item with them. Send them the item's reference, for example
+   `op://Captura/Captura worker OAuth` (vault, then item name): at
+   [worker step 3](worker.md#3-connect-rclone-to-google-drive), `capture drive-setup
+   --from` reads both fields from it, so nobody pastes the secret. Treat the secret like
+   a password: don't send it by chat or email, and don't put it in the repository.
+   For the iPhone, an item with `ios_client_id` (and `hosted_domain`, if you use one)
+   lets people run step 4.2 with `--from` too. The iOS client ID isn't secret.
 6. Choose the Mac's Drive permission. The iPhone uses `drive.file`, which only covers
    files this project's apps create. Start the Mac with `drive.file` as well. Once the
    iPhone has uploaded one recording, run [`capture probe`](worker.md#6-find-the-phones-folder).

@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Write ios/Config/Captura.local.xcconfig, the personal settings of a Captura iOS build.
 
-Python 3 standard library only. No network, no downloads. An iOS OAuth client ID and an
-Apple team ID are identifiers, not secrets; nothing secret is read or printed.
+Python 3 standard library only. No network or downloads of its own (with --from, the
+password manager's CLI may go online to read the item). An iOS OAuth client ID and an
+Apple team ID are identifiers, not secrets; nothing secret is written or printed.
 
     python3 ios/scripts/configure.py --bundle-id YOUR-BUNDLE-ID   # check it; writes nothing
     python3 ios/scripts/configure.py --bundle-id YOUR-BUNDLE-ID \\
@@ -10,6 +11,11 @@ Apple team ID are identifiers, not secrets; nothing secret is read or printed.
     python3 ios/scripts/configure.py                      # fill in the team after Xcode sign-in
     python3 ios/scripts/configure.py --team ABCDE12345    # set the team explicitly
     python3 ios/scripts/configure.py --adopt-xcode-team   # move a team picked in Xcode here
+    python3 ios/scripts/configure.py --from "op://Vault/Item"  # read the values from an item
+
+--from reads the fields ios_client_id, bundle_id and (optional) hosted_domain from a
+1Password item (op://Vault/Item) or a macOS Keychain service (keychain://service, one
+account per field); --field-map renames them. Flags given explicitly win over the item.
 """
 import argparse
 import os
@@ -43,6 +49,9 @@ PLACEHOLDER_TEAM = '$(CAPTURA_DEVELOPMENT_TEAM)'
 PLACEHOLDER_WORDS = ('example', 'yourname', 'your-name', 'your_name', 'yourcompany', 'yourdomain',
                      'your-', 'paste')
 GUIDE_BUNDLE_IDS = ('com.anagarcia.captura',)
+# Fields read by --from, as {option: default field name in the item}.
+FROM_FIELDS = {'bundle_id': 'bundle_id', 'google_client_id': 'ios_client_id', 'hosted_domain': 'hosted_domain'}
+FIELD_MAP_KEYS = ('ios_client_id', 'bundle_id', 'hosted_domain')
 BUNDLE_HINT = 'Use "com." + your own name + ".captura", in lowercase with no spaces or accents.'
 
 
@@ -375,7 +384,7 @@ def parse_args(argv):
     parser.add_argument('--bundle-id', help='unique to you: "com." + your name + ".captura", lowercase. '
                                             'Alone, it only checks the value and writes nothing')
     parser.add_argument('--google-client-id', help='Client ID of your Google "iOS" OAuth client')
-    parser.add_argument('--hosted-domain', default='',
+    parser.add_argument('--hosted-domain', default=None,
                         help='optional Google Workspace domain (the part after @ in your work address)')
     parser.add_argument('--team', help='Apple team ID (10 characters); detected from Xcode if omitted')
     parser.add_argument('--adopt-xcode-team', action='store_true',
@@ -384,15 +393,69 @@ def parse_args(argv):
     parser.add_argument('--force', action='store_true',
                         help='replace an existing Captura.local.xcconfig (the Apple team saved '
                              'in it is kept unless you pass --team)')
+    parser.add_argument('--from', dest='source', metavar='REF',
+                        help='read ios_client_id, bundle_id and optional hosted_domain from a 1Password '
+                             'item (op://Vault/Item) or a Keychain service (keychain://service); '
+                             'flags given explicitly win')
+    parser.add_argument('--field-map', action='append', metavar='KEY=FIELD',
+                        help='field names in the item when they differ from the defaults, e.g. '
+                             'ios_client_id="iOS client ID" (keys: ' + ', '.join(FIELD_MAP_KEYS) + ')')
     args = parser.parse_args(argv)
-    if args.google_client_id and not args.bundle_id:
-        parser.error('--google-client-id needs --bundle-id too')
-    if args.bundle_id and not args.google_client_id and (args.team or args.adopt_xcode_team or args.force):
-        parser.error('--bundle-id without --google-client-id only checks the bundle ID; '
-                     'run --team, --adopt-xcode-team or --force on their own')
-    if args.team and args.adopt_xcode_team:
-        parser.error('use either --team or --adopt-xcode-team')
+    if args.field_map and not args.source:
+        parser.error('--field-map needs --from')
+    if not args.source:
+        problem = combination_problem(args)
+        if problem:
+            parser.error(problem)
     return args
+
+
+def combination_problem(args):
+    """Options that cannot go together, once every value is known."""
+    if args.google_client_id and not args.bundle_id:
+        return '--google-client-id needs --bundle-id too'
+    if args.bundle_id and not args.google_client_id and (args.team or args.adopt_xcode_team or args.force):
+        return ('--bundle-id without --google-client-id only checks the bundle ID; '
+                'run --team, --adopt-xcode-team or --force on their own')
+    if args.team and args.adopt_xcode_team:
+        return 'use either --team or --adopt-xcode-team'
+    return None
+
+
+def fill_from_source(args):
+    """Takes the values the person did not pass from the item in --from. These are
+    identifiers, not secrets, so they are shown and validated exactly like flags."""
+    # Imported only here: every other use of this script works without scripts/.
+    sys.path.insert(0, str(ROOT / 'scripts'))
+    try:
+        import secret_refs
+    except ImportError:
+        raise ConfigError('--from needs scripts/secret_refs.py, which this copy lacks. Update it with '
+                          '"git pull", or pass the values with --bundle-id and --google-client-id.') from None
+    try:
+        names = secret_refs.parse_field_map(args.field_map, FIELD_MAP_KEYS)
+        labels = {option: names.get('ios_client_id' if option == 'google_client_id' else option, default)
+                  for option, default in FROM_FIELDS.items()}
+        wanted = [labels[option] for option in FROM_FIELDS if getattr(args, option) is None]
+        found = secret_refs.resolve_fields(args.source, wanted) if wanted else {}
+    except secret_refs.SecretRefError as error:
+        raise ConfigError(str(error)) from None
+    taken = []
+    for option, label in labels.items():
+        if getattr(args, option) is None and label in found:
+            setattr(args, option, found[label].strip())
+            taken.append(label)
+    if args.bundle_id is None and args.google_client_id is None:
+        raise ConfigError(f'{args.source} has neither a "{labels["bundle_id"]}" nor an '
+                          f'"{labels["google_client_id"]}" field. Check the field names in the item, or name '
+                          'them with --field-map.')
+    if args.google_client_id and not args.bundle_id:
+        raise ConfigError(f'{args.source} has no "{labels["bundle_id"]}" field. Pass your bundle ID with '
+                          '--bundle-id, or ask the admin to add that field to the item.')
+    problem = combination_problem(args)
+    if problem:
+        raise ConfigError(problem + '.')
+    return taken
 
 
 def main(argv=None):
@@ -400,6 +463,11 @@ def main(argv=None):
     root = ROOT
     local = root / LOCAL
     try:
+        if args.source:
+            taken = fill_from_source(args)
+            print(f'Read {", ".join(taken) or "no fields"} from {args.source}.')
+        if args.hosted_domain is None:
+            args.hosted_domain = ''
         team_note = None
         adopted = False
         if args.team:

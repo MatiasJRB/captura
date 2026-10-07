@@ -11,6 +11,7 @@ import os
 from pathlib import Path
 import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'worker'))
+import drive_setup
 import onboarding
 import reader
 import worker
@@ -22,7 +23,7 @@ def parser():
     top = argparse.ArgumentParser(
         prog='python3 bin/capture',
         description='Captura: local voice evidence for humans and external agents. Setup: '
-                    'init, doctor, probe, pin, run (docs/worker.md). Reading: list, read, view.')
+                    'drive-setup, init, doctor, probe, pin, run (docs/worker.md). Reading: list, read, view.')
     commands = top.add_subparsers(dest='command', required=True, metavar='COMMAND')
 
     def add(name, summary):
@@ -39,6 +40,32 @@ def parser():
         cmd.add_argument('--root', help='folder for verified audio and transcripts' + default(DEFAULT_INBOX))
         cmd.add_argument('--language', help='spoken language code, e.g. es or en, or auto' + default('es'))
         cmd.add_argument('--remote', help='rclone remote name' + default(onboarding.DEFAULT_REMOTE))
+
+    cmd = add('drive-setup', 'write the rclone remote for Google Drive from a password manager item or a '
+                             'hidden prompt, then sign in with rclone in the browser')
+    cmd.add_argument('--config', default=onboarding.DEFAULT_CONFIG,
+                     help='worker config whose remote and rclone config to use, if it exists '
+                          '(default: %(default)s)')
+    cmd.add_argument('--from', dest='source', metavar='REF',
+                     help='item holding the Desktop client: op://Vault/Item (1Password) or keychain://service '
+                          '(macOS Keychain, one account per field). Without it, you are asked; the secret is hidden')
+    cmd.add_argument('--client-id-ref', metavar='REF',
+                     help='one reference for the client ID: op://Vault/Item/field, keychain://service/account '
+                          'or env:NAME')
+    cmd.add_argument('--client-secret-ref', metavar='REF', help='one reference for the client secret, same forms')
+    cmd.add_argument('--field-map', action='append', metavar='KEY=FIELD',
+                     help='field names in the item when they are not client_id and client_secret, e.g. '
+                          'client_secret="credential"')
+    cmd.add_argument('--remote', help=f'rclone remote name (default: the worker config\'s, or '
+                                      f'{onboarding.DEFAULT_REMOTE})')
+    cmd.add_argument('--scope', default='drive.file', choices=drive_setup.SCOPES,
+                     help='Drive permission (default: %(default)s; drive.readonly if probe cannot see the folder)')
+    cmd.add_argument('--rclone-config', metavar='PATH',
+                     help='rclone config file (default: the worker config\'s, or rclone\'s own default)')
+    cmd.add_argument('--force', action='store_true',
+                     help='replace an existing remote of that name (drops its Google authorization)')
+    cmd.add_argument('--no-login', action='store_true',
+                     help='only write the remote; sign in later with "rclone config reconnect REMOTE:"')
 
     cmd = add('init', 'write a private worker config (no network)')
     config_option(cmd)
@@ -103,6 +130,12 @@ def main():
             result = onboarding.update_config(args.config, prog, account=args.account, remote=args.remote,
                                               model=args.model, root=args.root, language=args.language)
         elif args.command == 'doctor': result = onboarding.doctor(args.config, prog)
+        elif args.command == 'drive-setup':
+            result = drive_setup.drive_setup(prog, args.config, source=args.source, client_id_ref=args.client_id_ref,
+                                             client_secret_ref=args.client_secret_ref, field_map=args.field_map,
+                                             remote=args.remote, scope=args.scope,
+                                             rclone_config=args.rclone_config, force=args.force,
+                                             login=not args.no_login)
         elif args.command == 'pin': result = onboarding.pin_folder(args.config, args.folder_id, prog)
         else:
             config = worker.load_config(args.config)

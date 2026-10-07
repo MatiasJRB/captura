@@ -43,7 +43,8 @@ Code, Codex) is helping you, ask it to follow
 - From the Google admin: the **Desktop** client ID and client secret, created in the
   same Google Cloud project as the phone's client ([admin steps](ios.md#google-cloud-setup-for-the-admin)).
   Get them through a password manager item the admin shares with you (for example in
-  1Password), not by chat or email. You paste them from there in step 3.
+  1Password), not by chat or email. Step 3 reads them from that item, or you paste them
+  at a hidden prompt.
 - The Google account the phone linked, and the folder ID the phone shows under
   "Copiar ID de carpeta".
 
@@ -96,8 +97,68 @@ The worker uses [rclone](https://rclone.org/drive/) only to keep its Google
 authorization fresh. Use the **Desktop** client from the admin. rclone's built-in
 shared client is being retired during 2026, so don't use it.
 
-Have the password manager item open. Run these lines one at a time. At each prompt,
-paste the value from the item and press Return:
+`capture drive-setup` writes the rclone remote `captura` with the Desktop client ID and
+secret, then opens the Google sign-in. It never shows the secret, never puts it on a
+command line and keeps it only in rclone's own config file, readable only by you.
+
+**Recommended: from the password manager item.** If the admin shared an item with you in
+1Password, with the fields `client_id` and `client_secret`, point at the item. Use its
+vault and item names in place of the example:
+
+```sh
+python3 bin/capture drive-setup --from "op://Captura/Captura worker OAuth"
+```
+
+This needs the [1Password CLI](https://developer.1password.com/docs/cli) (`brew install
+--cask 1password-cli`) with 1Password > Settings > Developer > **Integrate with 1Password CLI**
+turned on. 1Password may ask you to approve with Touch ID.
+
+- If the fields have other names, add `--field-map client_id="Desktop client ID"` (and
+  the same for `client_secret`) with the names in the item.
+- One reference per value works too: `--client-id-ref` and `--client-secret-ref`, each
+  with `op://Vault/Item/field`, `keychain://service/account` (macOS Keychain) or
+  `env:NAME`.
+- `--from "keychain://Captura worker OAuth"` reads the macOS Keychain instead: one
+  password per field, with the field name as the account.
+
+**Without an item:** run it without `--from`. It asks for the client ID, then for the
+secret without showing it, and says how many characters arrived:
+
+```sh
+python3 bin/capture drive-setup
+```
+
+- *You should see:* a few lines from rclone and your browser open on a Google sign-in
+  page. If rclone asks a question first, press Return to keep its default (sign in with
+  the web browser; not a Shared Drive). Sign in with the **same account the phone
+  linked** and allow access. The browser then says "Success", and Terminal shows
+  `"state": "drive_remote_ready"` with the remote, its scope and `"authorized": true`.
+  Its `Next:` line is the `init` command of step 4 (or `doctor`, if you already did
+  step 4).
+- rclone's lines include `NOTICE: Make sure your Redirect URL is set to
+  "http://127.0.0.1:53682/" in your custom config`, `Please go to the following link`
+  and `Waiting for code...`. Ignore the NOTICE: a Desktop client needs no redirect URL,
+  so there is nothing to set in Google Cloud.
+- *If the browser does not open:* copy the `http://127.0.0.1:53682/...` link that rclone
+  prints into your browser.
+- *If it says `secret_unavailable`:* the `Next:` line says why: the 1Password CLI is not
+  installed or not signed in, the item or a field is missing, or there was no terminal to
+  ask in. Fix that and run the same command again.
+- *If it says `remote_exists`:* you already have a `captura` remote, and nothing was
+  changed. Run doctor (step 5) to see whether it works. To replace it, run the same
+  command with `--force` at the end.
+- *If it says `rclone_sign_in_failed` or `not_authorized`:* the remote is saved; run the
+  `rclone config reconnect captura:` line it prints and sign in again.
+- *If rclone or Google says `invalid_client`, `unauthorized_client`, "The OAuth client
+  was not found" or `401`:* the client ID or secret is wrong, or it isn't the
+  **Desktop** client. Check both values in the item, then run drive-setup again with
+  `--force`.
+- *If Google says `org_internal`, `access_denied` or `admin_policy_enforced`:* see the
+  same messages in the [iPhone troubleshooting](ios.md#troubleshooting). The fixes are
+  the same.
+
+**By hand, with rclone only.** If you prefer not to use drive-setup, run these lines one
+at a time and paste the values at the prompts:
 
 ```sh
 printf 'Desktop client ID: '; read -r CAPTURA_CLIENT_ID
@@ -107,40 +168,20 @@ unset CAPTURA_CLIENT_ID CAPTURA_SECRET
 ```
 
 The secret doesn't show while you paste it, so the second line tells you how many
-characters arrived. This keeps the secret out of your shell history, and `> /dev/null`
-hides what rclone prints at the end, which includes the secret and the access token.
-
-- *You should see:* `Got` and a number above 0, then a few lines from rclone and your
-  browser open on a Google sign-in page. Sign in with the **same account the phone
-  linked** and allow access. The browser then says "Success", and Terminal shows the
-  prompt again.
-- rclone's lines include `NOTICE: Make sure your Redirect URL is set to
-  "http://127.0.0.1:53682/" in your custom config`, `Please go to the following link`
-  and `Waiting for code...`. Ignore the NOTICE: a Desktop client needs no redirect URL,
-  so there is nothing to set in Google Cloud.
-- *If it says `Got 0 characters`:* the paste didn't arrive. Run the second line again
-  before the third.
-- *If the browser does not open:* copy the `http://127.0.0.1:53682/...` link that rclone
-  prints into your browser.
-- *If rclone or Google says `invalid_client`, `unauthorized_client`, "The OAuth client
-  was not found" or `401`:* the client ID or secret was mistyped, or it isn't the
-  **Desktop** client. Remove the remote with `rclone config delete captura`, check both
-  values in the password manager, and do this step again.
-- *If Google says `org_internal`, `access_denied` or `admin_policy_enforced`:* see the
-  same messages in the [iPhone troubleshooting](ios.md#troubleshooting). The fixes are
-  the same.
+characters arrived (`Got 0 characters` means the paste didn't arrive: run that line
+again). This keeps the secret out of your shell history, and `> /dev/null` hides what
+rclone prints at the end, which includes the secret and the access token.
 
 `scope=drive.file` is the narrowest permission. Whether it can see files uploaded by
 the phone's client isn't documented by Google. Step 6 tests it. If it can't, switch to
-read-only access to all of Drive. Same steps, after removing the remote:
+read-only access to all of Drive by replacing the remote:
 
 ```sh
-rclone config delete captura
-printf 'Desktop client ID: '; read -r CAPTURA_CLIENT_ID
-printf 'Desktop client secret: '; read -rs CAPTURA_SECRET; echo; echo "Got ${#CAPTURA_SECRET} characters."
-rclone config create captura drive client_id="$CAPTURA_CLIENT_ID" client_secret="$CAPTURA_SECRET" scope=drive.readonly > /dev/null
-unset CAPTURA_CLIENT_ID CAPTURA_SECRET
+python3 bin/capture drive-setup --from "op://Captura/Captura worker OAuth" --scope drive.readonly --force
 ```
+
+Leave out `--from ...` if you don't have an item. By hand, run
+`rclone config delete captura` and the four lines above with `scope=drive.readonly`.
 
 The worker still makes only GET requests to one exact private folder. That limit is in
 the worker's code, though. Google sees a read-only grant to your whole Drive, so treat
@@ -188,6 +229,8 @@ python3 bin/capture doctor
 - *If there are other `Warn:` lines:* read them. A warning about the rclone connection
   (rclone's shared client, or a scope other than `drive.file` or `drive.readonly`) means
   redoing step 3 as the line says. You can still go on and fix it later.
+- *If the rclone connection is missing:* `Next:` points to step 3 and `Or:` is the
+  `drive-setup` command that does it. Add `--from` with the item, as step 3 shows.
 - *If `"state": "blocked"`:* do what the `Next:` line says. When it is a command, copy
   only that line after `Next: `, paste it and press Return. When it is a sentence,
   follow it (for example "Do step 3 of docs/worker.md"). Then run doctor again. If more
@@ -223,7 +266,7 @@ python3 bin/capture probe
   compare the ID with the phone first.
 - *If `"state": "waiting_for_phone_folder"` while the phone already shows a folder ID:*
   rclone can't see the phone's files with `drive.file`. Switch to `drive.readonly`
-  (end of step 3) and run probe again.
+  (end of step 3: drive-setup with `--scope drive.readonly --force`) and run probe again.
 - *If `"errors": ["existing_drive_authorization_unavailable"]` or
   `["existing_drive_authorization_expired"]`:* follow the `Next:` line. It sends you to
   step 3 if rclone has no `captura` remote yet, or gives
