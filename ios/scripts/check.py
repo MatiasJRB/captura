@@ -228,6 +228,19 @@ def check_team(report, root, team):
     return team
 
 
+def check_project_changes(report, root):
+    """Without settings there is no team to adopt: any change Xcode made to the tracked
+    project is only in the way of "git pull"."""
+    try:
+        project_team, unexpected, _, upgrade = configure.project_team(root)
+    except ConfigError:
+        return
+    if project_team or unexpected or upgrade:
+        report.add(WARN, 'Xcode project', f'tracked files in {configure.PROJECT_DIR} have changes; '
+                   '"git pull" can stop on them', f'git checkout -- {configure.PROJECT_DIR}',
+                   note='Unless you changed the project on purpose, quit Xcode and undo them.')
+
+
 def check_build_settings(report, root, values, team):
     result = run(['xcodebuild', '-project', 'ios/Captura.xcodeproj', '-target', 'Captura',
                   '-configuration', 'Debug', '-showBuildSettings', '-sdk', 'iphoneos'],
@@ -316,6 +329,8 @@ def main(argv=None):
         team = check_team(report, root, team)
         if xcode_ok and sdk_ok:
             check_build_settings(report, root, values, team)
+    else:
+        check_project_changes(report, root)
     if xcode_ok:
         check_devices(report)
     print(report.render())

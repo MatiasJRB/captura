@@ -510,6 +510,13 @@ class CheckTests(Sandbox):
         self.assertIn(f'Next: git checkout -- {PROJECT_DIR}\n', out)
         self.assertNotIn(f'git checkout -- {PROJECT}', out)
 
+    def test_project_changes_are_reported_before_any_settings_exist(self):
+        self.xcode_picks_team()
+        code, out = self.run_check()
+        self.assertEqual(code, 1)
+        self.assertIn('FAIL  Your settings', out)
+        self.assertIn(f'Next: git checkout -- {PROJECT_DIR}\n', out)
+
     def test_every_next_line_is_one_command_or_one_sentence(self):
         self.configured(team=None)
         self.xcode_stamps_upgrade()
