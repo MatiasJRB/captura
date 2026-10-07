@@ -3,7 +3,8 @@
 
 With --default-branch it also checks, offline, that the default branch as last fetched
 (origin/HEAD) has the setup guides and scripts: the guides tell people to "git clone"
-the repository, which checks out that branch.
+the repository, which checks out that branch. It refuses when origin is not the URL the
+guides clone, since a test clone's origin/HEAD says nothing about what people get.
 """
 import argparse
 from pathlib import Path
@@ -16,7 +17,23 @@ HANDOUT=('docs/ios.md','docs/worker.md','ios/scripts/configure.py','ios/scripts/
 def git(*args):
     return subprocess.run(['git',*args],cwd=root,capture_output=True,text=True)
 
+def repo_url(url):
+    """One spelling per repository: https, no .git, no trailing slash, lowercase."""
+    url=re.sub(r'^(?:ssh://)?git@([^:/]+)[:/]',r'https://\1/',url.strip())
+    return re.sub(r'(?:\.git)?/*$','',url).lower()
+
+def guide_url():
+    """The URL docs/ios.md tells people to clone, or None."""
+    try:match=re.search(r'git clone (\S+)',(root/'docs/ios.md').read_text())
+    except OSError:return None
+    return match.group(1) if match else None
+
 def default_branch_errors():
+    origin=git('remote','get-url','origin').stdout.strip();guide=guide_url()
+    if guide and repo_url(origin)!=repo_url(guide):
+        return [f'origin is {origin or "not set"}, but the guides clone {guide}. This clone\'s '
+                'origin/HEAD says nothing about that repository: run this in a clone of '
+                f'{guide} after "git fetch origin".']
     head=git('symbolic-ref','--quiet','refs/remotes/origin/HEAD')
     if head.returncode:
         return ['origin/HEAD is unknown here. Run "git remote set-head origin --auto" (it asks the remote), then run this again.']
@@ -53,4 +70,6 @@ if args.default_branch:errors+=default_branch_errors()
 if errors:
     print('\n'.join(errors),file=sys.stderr);raise SystemExit(1)
 print(f'Checked {len(set(paths)-{""})} candidate files; no forbidden files or configured secret patterns.'
-      +(' The default branch has the setup guides and scripts.' if args.default_branch else ''))
+      +(' The default branch has the setup guides and scripts ('
+        +git('symbolic-ref','--quiet','--short','refs/remotes/origin/HEAD').stdout.strip()
+        +' of '+git('remote','get-url','origin').stdout.strip()+', as last fetched).' if args.default_branch else ''))

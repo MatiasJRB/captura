@@ -65,6 +65,25 @@ class DefaultBranchTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn('The default branch has the setup guides', result.stdout)
 
+    def test_a_clone_of_another_copy_is_refused_instead_of_a_false_green(self):
+        # The install test cloned a local copy whose origin/HEAD was the feature branch and
+        # got "has the setup guides" while GitHub's default branch had none of them.
+        for name in HANDOUT:
+            (self.remote / name).parent.mkdir(parents=True, exist_ok=True)
+            (self.remote / name).write_text('Fictional.\n')
+        self.commit('guides')
+        self.git(self.clone, 'fetch', '-q', 'origin')
+        (self.clone / 'docs').mkdir()
+        (self.clone / 'docs/ios.md').write_text('git clone https://github.com/fictional/project.git\n')
+        result = self.check('--default-branch')
+        self.assertEqual(result.returncode, 1, result.stdout)
+        self.assertIn('but the guides clone https://github.com/fictional/project.git', result.stderr)
+        # The same repository spelled the SSH way passes.
+        self.git(self.clone, 'remote', 'set-url', 'origin', 'git@github.com:Fictional/Project.git')
+        result = self.check('--default-branch')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('origin/main of git@github.com:Fictional/Project.git', result.stdout)
+
     def test_unknown_origin_head_says_how_to_set_it(self):
         self.git(self.clone, 'remote', 'set-head', 'origin', '--delete')
         result = self.check('--default-branch')
