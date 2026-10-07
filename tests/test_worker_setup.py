@@ -92,26 +92,34 @@ class SetupHome:
         """Runs the CLI with stderr on a pseudo-terminal, as in Terminal. Returns (stdout, stderr).
 
         Our end of the terminal stays open until it is drained: on macOS, output still in
-        the buffer is lost once every handle to the terminal side is closed.
+        the buffer is lost once every handle to the terminal side is closed. Stdout is read
+        as it arrives too: macOS can give a pipe a buffer smaller than the JSON, and the
+        child would then wait forever to write it.
         """
         main, child = pty.openpty()
-        chunks = []
+        chunks, out = [], []
         try:
             process = subprocess.Popen([sys.executable, CLI, *args], stdout=subprocess.PIPE, stderr=child,
                                        stdin=subprocess.DEVNULL, env=self.env)
+            watched = [main, process.stdout.fileno()]
             while True:
-                if select.select([main], [], [], 0.05)[0]:
+                ready = select.select(watched, [], [], 0.05)[0]
+                if main in ready:
                     chunks.append(os.read(main, 65536))
-                elif process.poll() is not None:
+                if process.stdout.fileno() in ready:
+                    out.append(os.read(process.stdout.fileno(), 65536))
+                    if not out[-1]:  # End of stdout; keep draining the terminal.
+                        watched.remove(process.stdout.fileno())
+                if not ready and process.poll() is not None:
                     while select.select([main], [], [], 0.2)[0]:
                         chunks.append(os.read(main, 65536))
                     break
-            stdout = process.stdout.read().decode()
+            out.append(process.stdout.read())
             process.stdout.close()
         finally:
             os.close(child)
             os.close(main)
-        return stdout, b''.join(chunks).decode().replace('\r\n', '\n')
+        return b''.join(out).decode(), b''.join(chunks).decode().replace('\r\n', '\n')
 
     def doctor(self):
         result = self.cli('doctor')
@@ -158,10 +166,25 @@ class InitTests(unittest.TestCase):
     def test_init_rejects_placeholder_account(self):
         with tempfile.TemporaryDirectory() as tmp:
             env = SetupHome(tmp)
-            for account in ('you@example.com', 'you@yourcompany.com', 'you@yourdomain.com'):
+            for account in ('you@example.com', 'you@yourcompany.com', 'you@yourdomain.com', 'YOUR-GOOGLE-ADDRESS'):
                 result = env.cli('init', '--account', account)
                 self.assertEqual(result.returncode, 1, account)
             self.assertFalse(env.config.exists())
+
+    def test_refused_account_gives_the_command_to_run_again(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            env = SetupHome(tmp)
+            report = json.loads(env.cli('init', '--account', 'you@yourcompany.com', '--language', 'en').stdout)
+            self.assertEqual(report['error'], 'invalid_account')
+            self.assertEqual(report['next_step'], f'python3 {CLI} init --language en --account YOUR-GOOGLE-ADDRESS')
+            self.assertIn('Cuenta', report['note'])
+            other = str(Path(tmp) / 'other config.json')
+            custom = json.loads(env.cli('init', '--config', other, '--account', 'you@example.com').stdout)
+            self.assertEqual(custom['next_step'],
+                             f'python3 {CLI} init --config {shlex.quote(other)} --account YOUR-GOOGLE-ADDRESS')
+            env.cli('init', '--account', 'person@fictional.test')
+            changed = json.loads(env.cli('set', '--account', 'you@example.com').stdout)
+            self.assertEqual(changed['next_step'], f'python3 {CLI} set --account YOUR-GOOGLE-ADDRESS')
 
     def test_init_takes_root_language_and_model(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -307,6 +330,40 @@ class DoctorTests(unittest.TestCase):
                                                           'Captura/config.json" --model "$HOME/.cache/whisper/ggml-small.bin"'))
             self.assertEqual(report['alternative'], model['alternative'])
 
+    def test_missing_model_offers_the_best_one_already_downloaded(self):
+        cases = [
+            # (models on this Mac, expected fallback)
+            (('ggml-base.bin', 'ggml-small.bin'), 'ggml-small.bin'),
+            (('ggml-base.bin', 'ggml-small.bin', 'ggml-large-v3-turbo-q5_0.bin'), 'ggml-large-v3-turbo-q5_0.bin'),
+            (('ggml-tiny.bin', 'ggml-base.bin'), 'ggml-base.bin'),
+            (('ggml-base.bin', 'ggml-medium.bin'), 'ggml-medium.bin'),
+        ]
+        for present, expected in cases:
+            with self.subTest(present=present), tempfile.TemporaryDirectory() as tmp:
+                env = self.ready_env(tmp)
+                cache = env.home / '.cache/whisper'
+                (cache / 'ggml-large-v3-turbo.bin').unlink()
+                sizes = {'ggml-tiny.bin': 77, 'ggml-base.bin': 148, 'ggml-small.bin': 488,
+                         'ggml-large-v3-turbo-q5_0.bin': 574, 'ggml-medium.bin': 1533}
+                for name in present:
+                    with (cache / name).open('wb') as stream:
+                        stream.truncate(sizes[name] * 1000 * 1000)  # sparse
+                model = by_check(env.doctor()[1])['model']
+                self.assertTrue(model['alternative'].endswith(f'--model "$HOME/.cache/whisper/{expected}"'), model)
+                self.assertEqual('less accurately' in model['note'], expected == 'ggml-base.bin')
+
+    def test_a_low_accuracy_model_is_a_warning(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            env = self.ready_env(tmp)
+            base = env.home / '.cache/whisper/ggml-base.bin'
+            with base.open('wb') as stream:
+                stream.truncate(148 * 1000 * 1000)
+            env.cli('set', '--model', str(base))
+            result, report = env.doctor()
+            self.assertEqual(result.returncode, 0)
+            self.assertEqual(by_check(report)['model']['status'], 'warn')
+            self.assertIn('less accurately', by_check(report)['model']['detail'])
+
     def test_terminal_gets_plain_commands_without_json_escapes(self):
         with tempfile.TemporaryDirectory() as tmp:
             env = self.ready_env(tmp)
@@ -323,6 +380,57 @@ class DoctorTests(unittest.TestCase):
             self.assertIn('--model "$HOME/.cache/whisper/ggml-small.bin"', lines['Or'])
             piped = env.cli('doctor')
             self.assertEqual(piped.stderr, '')
+
+    def assert_one_command_or_sentence_per_line(self, terminal):
+        """Copying any whole line pastes one command or nothing runnable, never a command
+        followed by a sentence (the install test pasted "Download ..." into zsh)."""
+        commands = onboarding.COMMANDS
+        for line in terminal.strip().splitlines():
+            with self.subTest(line=line):
+                self.assertFalse(line.startswith(' '), 'no continuation lines')
+                label, _, rest = line.partition(': ')
+                if label in ('Next', 'Or', 'Fix'):
+                    rest = rest.strip()
+                    if rest.startswith(commands):
+                        shlex.split(rest)  # Parses as one shell line.
+                    else:
+                        self.assertIsNone(re.search(r'(^|\s)(curl|mkdir|python3|rclone|brew|chmod) ', rest), rest)
+                elif not line.startswith(('Warn: ', 'Then fix: ')):
+                    self.assertFalse(line.startswith(commands), line)
+
+    def test_terminal_lines_never_mix_a_command_and_a_sentence(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            env = self.ready_env(tmp)
+            (env.home / '.cache/whisper/ggml-large-v3-turbo.bin').unlink()
+            (env.home / '.cache/whisper/ggml-small.bin').write_bytes(b'lmgg')
+            _, terminal = env.cli_at_terminal('doctor')
+            self.assert_one_command_or_sentence_per_line(terminal)
+            exists = env.cli_at_terminal('init', '--account', 'person@fictional.test', '--language', 'en')[1]
+            self.assert_one_command_or_sentence_per_line(exists)
+            self.assertIn('Next: python3 ', exists)
+
+    def test_terminal_shows_warnings_and_names_what_else_fails_in_words(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            env = self.ready_env(tmp)
+            env.remote(rclone_section(client=False, scope='drive'))
+            stdout, terminal = env.cli_at_terminal('doctor')
+            self.assertEqual(json.loads(stdout)['state'], 'ready_with_warnings')
+            warn = [line for line in terminal.splitlines() if line.startswith('Warn: the rclone connection')]
+            self.assertEqual(len(warn), 1, terminal)
+            self.assertIn('shared Google client', warn[0])
+            self.assertIn('full Drive access', warn[0])
+            self.assertIn('rclone config delete captura', warn[0])
+            self.assertIn('Warn: the phone\'s Drive folder', terminal)
+            self.assertTrue(terminal.strip().splitlines()[-1].startswith('Next: python3 '), terminal)
+            self.assert_one_command_or_sentence_per_line(terminal)
+
+            config = json.loads(env.config.read_text())
+            config.update(ffmpeg='ffmpeg-not-installed', model='~/.cache/whisper/missing.bin')
+            env.config.write_text(json.dumps(config))
+            _, blocked = env.cli_at_terminal('doctor')
+            self.assertIn('Then fix: the speech model (step 2). Run doctor again after each fix.', blocked)
+            self.assertNotIn('model,', blocked)
+            self.assertNotIn('rclone_remote', blocked)
 
     def test_pinned_placeholder_from_an_older_version_is_reported(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -366,6 +474,9 @@ class DoctorTests(unittest.TestCase):
             (rclone_section(token=False), 'fail', 'not authorized'),
             (rclone_section(client=False), 'warn', 'shared Google client'),
             (rclone_section(scope=''), 'warn', 'full access'),
+            (rclone_section(scope='drive'), 'warn', 'full Drive access'),
+            (rclone_section(scope='drive.appfolder'), 'warn', 'expects scope drive.file or drive.readonly'),
+            (rclone_section(scope='drive.metadata.readonly'), 'warn', 'expects scope drive.file or drive.readonly'),
             (rclone_section(scope='drive.readonly'), 'ok', 'drive.readonly'),
             ('# Encrypted rclone configuration File\n\nRCLONE_ENCRYPT_V0:\nZmljdGlvbmFs\n', 'fail', 'encrypted'),
             ('[captura]\ntype = s3\n', 'fail', 'not drive'),
@@ -477,6 +588,9 @@ class PinAndHintTests(unittest.TestCase):
             self.assertNotIn('reconnect', result.stdout)
             self.assertNotIn('capture doctor', result.stdout)
             self.assertRegex(report['at'], r'^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d[+-]\d\d:\d\d$')
+            # Probe never downloads, so it does not print run's counters.
+            for counter in ('downloaded', 'transcribed', 'quarantined'):
+                self.assertNotIn(counter, report)
 
     def test_expired_authorization_points_to_reconnect(self):
         with tempfile.TemporaryDirectory() as tmp:

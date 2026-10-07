@@ -107,6 +107,9 @@ def main():
         else:
             config = worker.load_config(args.config)
             result = worker.run(config, probe=args.command == 'probe')
+            if args.command == 'probe':
+                # Probe never downloads: run's counters would only read like an attempt.
+                result = {k: v for k, v in result.items() if k not in ('downloaded', 'transcribed', 'quarantined')}
             # Advice for the person or agent reading the output; the worker status is unchanged.
             result = dict(result, **onboarding.hint(result, config_path, config, prog))
         print(json.dumps(result, ensure_ascii=False, indent=2))

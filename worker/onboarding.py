@@ -6,7 +6,9 @@ token is present are read out.
 
 Advice fields: `next_step` is either one shell command or prose without a command in
 it, so it can be pasted as it is. `note` adds context in prose. `alternative` is another
-command or prose. `plain_advice()` renders them as text for a person at a terminal.
+command or prose. `plain_advice()` renders them as text for a person at a terminal: each
+`Next:`, `Or:` or `Fix:` line holds one command or one sentence, and the prose around it
+goes on lines of its own, so copying a whole line never pastes a sentence into the shell.
 """
 import configparser
 import json
@@ -35,10 +37,32 @@ KNOWN_SIZES = {
 }
 MODEL_URLS = {
     'ggml-large-v3-turbo.bin': 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo.bin',
+    'ggml-large-v3-turbo-q5_0.bin':
+        'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo-q5_0.bin',
     'ggml-small.bin': 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.bin',
     'ggml-silero-v6.2.0.bin': 'https://huggingface.co/ggml-org/whisper-vad/resolve/main/ggml-silero-v6.2.0.bin',
 }
+# The model docs/worker.md step 2 downloads, then its smaller fallbacks, best first.
+RECOMMENDED_MODELS = ('ggml-large-v3-turbo.bin', 'ggml-large-v3-turbo-q5_0.bin', 'ggml-small.bin')
+LOW_ACCURACY_MODELS = ('tiny', 'base')
 OK, WARN, FAIL = 'ok', 'warn', 'fail'
+# What each doctor check is about, for people; the JSON keeps the check IDs for agents.
+LABELS = {
+    'python': 'Python',
+    'config': 'the worker settings (step 4)',
+    'account': 'the Google account in the settings (step 4)',
+    'language': 'the transcription language (step 4)',
+    'ffmpeg': 'ffmpeg (step 1)',
+    'whisper_cli': 'whisper-cli (step 1)',
+    'whisper_vad': "whisper-cli's voice detection (step 1)",
+    'model': 'the speech model (step 2)',
+    'vad_model': 'the voice detection model (step 2)',
+    'transcribe': 'transcription',
+    'rclone': 'rclone (step 1)',
+    'rclone_remote': 'the rclone connection to Google Drive (step 3)',
+    'folder_id': "the phone's Drive folder (steps 6 and 7)",
+    'root': 'the transcripts folder (step 4)',
+}
 LANGUAGE = re.compile(r'[a-z]{2,3}|auto')
 REMOTE_NAME = re.compile(r'[A-Za-z0-9_. +@-]{1,64}')
 STEP_3 = 'Do step 3 of docs/worker.md (Connect rclone to Google Drive).'
@@ -136,11 +160,17 @@ def _user_path(value):
     return _home_relative(os.path.abspath(os.path.expanduser(value)))
 
 
-def _settings_error(account=None, remote=None, language=None):
-    """The first invalid value as an error result, or None."""
+ACCOUNT_PLACEHOLDER = 'YOUR-GOOGLE-ADDRESS'
+ACCOUNT_NOTE = ('Use the Google account you link on the phone (after linking, iPhone step 10.2 shows it under '
+                '"Cuenta"). The address in the guide is only an example.')
+
+
+def _settings_error(account=None, remote=None, language=None, retry=None):
+    """The first invalid value as an error result, or None. `retry(*parts)` is the command
+    to run again with an account placeholder."""
     if account is not None and not _valid_account(account):
-        return dict(state='error', error='invalid_account',
-                    next_step='Use the Google account the phone links (the one it shows under "Cuenta").')
+        return dict(state='error', error='invalid_account', note=ACCOUNT_NOTE,
+                    next_step=retry('--account', ACCOUNT_PLACEHOLDER) if retry else ACCOUNT_NOTE)
     if remote is not None and not REMOTE_NAME.fullmatch(remote):
         return dict(state='error', error='invalid_remote', next_step='Use a simple rclone remote name, such as captura.')
     if language is not None and not LANGUAGE.fullmatch(language):
@@ -149,10 +179,24 @@ def _settings_error(account=None, remote=None, language=None):
     return None
 
 
+def _retry(prog, name, path, **options):
+    """`retry(*parts)`: the same `name` command with the options that were valid, plus `parts`."""
+    def retry(*parts):
+        words = [name]
+        if Path(path) != Path(os.path.expanduser(DEFAULT_CONFIG)):
+            words += ['--config', Path(path)]
+        for key, value in options.items():
+            if value is not None:
+                words += ['--' + key, Path(os.path.expanduser(value)) if key in ('model', 'root') else value]
+        return command(prog, *words, *parts)
+    return retry
+
+
 def init_config(path, account, prog, remote=None, model=None, force=False, root=None, language=None):
     """Writes a new config. Options left as None take the defaults."""
     path = Path(os.path.expanduser(path))
-    error = _settings_error(account, remote, language)
+    retry = _retry(prog, 'init', path, remote=remote, model=model, root=root, language=language)
+    error = _settings_error(account, remote, language, retry)
     if error:
         return error
     chosen = dict(remote=remote, model=model and _user_path(model), root=root and _user_path(root),
@@ -203,7 +247,8 @@ def init_config(path, account, prog, remote=None, model=None, force=False, root=
 def update_config(path, prog, account=None, remote=None, model=None, root=None, language=None):
     """Changes only the values given; keeps the pinned folder and every other setting."""
     path = Path(os.path.expanduser(path))
-    error = _settings_error(account, remote, language)
+    retry = _retry(prog, 'set', path, remote=remote, model=model, root=root, language=language)
+    error = _settings_error(account, remote, language, retry)
     if error:
         return error
     if not path.is_file():
@@ -277,12 +322,21 @@ def _check_tool(checks, name, value, install):
 
 
 def _other_models(folder, missing):
-    """Whisper models already in `folder`, so doctor can offer them instead of a download."""
+    """Whisper models already in `folder`, best first, so doctor can offer them instead of a
+    download: the ones docs/worker.md recommends in its order, then the rest, larger first."""
     try:
-        names = sorted(p.name for p in Path(folder).glob('ggml-*.bin') if p.is_file())
+        sizes = {p.name: p.stat().st_size for p in Path(folder).glob('ggml-*.bin') if p.is_file()}
     except OSError:
         return []
-    return [n for n in names if n != missing and 'silero' not in n and 'vad' not in n]
+
+    def rank(name):
+        known = RECOMMENDED_MODELS.index(name) if name in RECOMMENDED_MODELS else len(RECOMMENDED_MODELS)
+        return known, -sizes[name], name
+    return sorted((n for n in sizes if n != missing and 'silero' not in n and 'vad' not in n), key=rank)
+
+
+def _low_accuracy(name):
+    return any(word in name for word in LOW_ACCURACY_MODELS)
 
 
 def _check_model(checks, name, value, minimum, maximum=None, prog=None, config_path=None):
@@ -299,7 +353,9 @@ def _check_model(checks, name, value, minimum, maximum=None, prog=None, config_p
         if others and prog:
             check['detail'] += f' (also in that folder: {", ".join(others)})'
             check['alternative'] = command(prog, 'set', '--config', config_path, '--model', path.parent / others[0])
-            check['note'] = f'Download {path.name}, or switch to {others[0]}, which is already on this Mac.'
+            check['note'] = (f'Download {path.name} with the first command, or switch to {others[0]}, which is '
+                             'already on this Mac, with the second.'
+                             + (' It transcribes less accurately.' if _low_accuracy(others[0]) else ''))
         checks.append(check)
         return
     size = path.stat().st_size
@@ -320,6 +376,12 @@ def _check_model(checks, name, value, minimum, maximum=None, prog=None, config_p
     elif size < minimum or (maximum and size > maximum):
         checks.append(dict(check=name, status=FAIL, detail=f'{human} is not a plausible size',
                            next_step=again))
+    elif name == 'model' and _low_accuracy(path.name):
+        checks.append(dict(check=name, status=WARN,
+                           detail=f'{_home_relative(path)} ({human}) transcribes less accurately than the models '
+                                  'in docs/worker.md step 2',
+                           next_step='For better text, download ggml-large-v3-turbo.bin or ggml-small.bin (docs/'
+                                     'worker.md step 2) and switch to it with set --model.'))
     else:
         checks.append(dict(check=name, status=OK, detail=f'{_home_relative(path)} ({human})'))
 
@@ -375,14 +437,18 @@ def inspect_remote(config):
     if not has_token:
         return result(FAIL, detail + ', not authorized yet', f'rclone config reconnect {name}:',
                       f'Sign in with {account} in the browser that opens.')
+    problems = []
     if not client:
-        return result(WARN, detail + ", using rclone's shared Google client",
-                      f'rclone is retiring its shared client during 2026. {recreate}')
+        problems.append("it uses rclone's shared Google client, which rclone is retiring during 2026")
     scopes = {s.strip() for s in scope.split(',') if s.strip()}
     if not scopes or 'drive' in scopes:
-        return result(WARN, detail,
-                      'Full Drive access is more than the worker needs. ' + recreate,
-                      'Use scope=drive.file, or scope=drive.readonly if probe cannot see the phone\'s folder.')
+        problems.append('full Drive access is more than the worker needs')
+    elif scopes - {'drive.file', 'drive.readonly'}:
+        problems.append('the worker expects scope drive.file or drive.readonly')
+    if problems:
+        return result(WARN, detail + ', authorized, but ' + '; '.join(problems), recreate,
+                      'Use the Desktop client from the admin and scope=drive.file, or scope=drive.readonly '
+                      'if probe cannot see the phone\'s folder.')
     return result(OK, detail + ', authorized')
 
 
@@ -418,8 +484,8 @@ def doctor(path, prog):
         checks.append(dict(check='config', status=OK, detail=_home_relative(shown)))
     if not _valid_account(config.get('expected_account')):
         checks.append(dict(check='account', status=FAIL, detail='expected_account is not a real address',
-                           next_step='Save the Google account the phone links with set --account '
-                                     '(python3 bin/capture set --help).'))
+                           next_step=command(prog, 'set', '--config', shown, '--account', ACCOUNT_PLACEHOLDER),
+                           note=ACCOUNT_NOTE))
     else:
         checks.append(dict(check='account', status=OK, detail=config['expected_account']))
     if not LANGUAGE.fullmatch(str(config.get('language', 'es'))):
@@ -476,6 +542,8 @@ def doctor(path, prog):
 
 
 ADVICE = ('next_step', 'note', 'alternative')
+# How the commands in advice start; anything else is a sentence.
+COMMANDS = ('python3 ', 'curl ', 'mkdir ', 'rclone ', 'brew ', 'chmod ', 'git ')
 
 
 def _summary(checks, path, prog, config):
@@ -568,16 +636,38 @@ def hint(result, config_path, config, prog):
     return {}
 
 
+def label(check_id):
+    return LABELS.get(check_id, check_id.replace('_', ' '))
+
+
 def plain_advice(result):
     """The advice in `result` as plain lines for a person at a terminal: commands appear
-    exactly as they must be typed, without JSON escaping."""
+    exactly as they must be typed, without JSON escaping, each alone after its label.
+
+    Doctor's warnings come first (they are only in the JSON otherwise), then the note,
+    then `Next:` and `Or:`, then what else fails, in words rather than check IDs. While
+    something fails, warnings get no `Fix:` command yet: the failures come first."""
     lines = []
+    shown = {result.get('next_step'), result.get('alternative')}
+    for check in result.get('checks') or []:
+        if check.get('status') != WARN:
+            continue
+        step, note = check.get('next_step'), check.get('note')
+        command_step = bool(step) and step.startswith(COMMANDS)
+        text = f'Warn: {label(check["check"])}: {check["detail"]}.'
+        for prose in (None if command_step else step, note):
+            if prose:
+                text += ' ' + prose
+        lines.append(text)
+        if command_step and step not in shown and result.get('state') != 'blocked':
+            lines.append('Fix:  ' + step)
+    if result.get('note'):
+        lines.append(result['note'])
     if result.get('next_step'):
         lines.append('Next: ' + result['next_step'])
-        if result.get('note'):
-            lines.append('      ' + result['note'])
     if result.get('alternative'):
         lines.append('Or:   ' + result['alternative'])
     if result.get('also_failing'):
-        lines.append('Then fix: ' + ', '.join(result['also_failing']) + ' (run doctor again after each fix).')
+        lines.append('Then fix: ' + ', '.join(label(c) for c in result['also_failing'])
+                     + '. Run doctor again after each fix.')
     return lines
