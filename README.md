@@ -16,7 +16,7 @@ detection (VAD). You or your external agent read the results and review the evid
 ## From voice to evidence
 
 <p align="center">
-  <img src="assets/brand/pipeline.svg" alt="User-started Android capture → optional opt-in Drive sync → local hash checks and Whisper/VAD → original plus JSON/TXT/SRT → review by you or your external agent. No automatic actions." width="600">
+  <img src="assets/brand/pipeline.svg" alt="User-started capture on Android or iPhone → optional opt-in Drive sync → local hash checks and Whisper/VAD → original plus JSON/TXT/SRT → review by you or your external agent. No automatic actions." width="600">
 </p>
 
 **Capture → optional sync → local transcription → review.** The original stays
@@ -50,7 +50,9 @@ that folder is sensitive and must never be published casually.
   steps from installing Xcode to the first upload, plus the Google Cloud setup.
   [Guía rápida en español](docs/ios.es.md).
 - [Worker](docs/worker.md): macOS, Homebrew whisper.cpp/ffmpeg/rclone, models, then
-  `capture init` → `doctor` → `probe` → `pin` → `run` (`set` changes a value later).
+  `capture drive-setup` → `init` → `doctor` → `probe` → `pin` → `run` (`set` changes a value later).
+- Setup values can come from a password manager (`--from op://…`, `keychain://…`) instead of
+  being pasted: an organization shares one item and each person runs two commands.
 - Setting it up with a coding agent: [`captura-setup`](.claude/skills/captura-setup/SKILL.md)
   is the step-by-step procedure for Claude Code, Codex or any agent helping someone.
 - [Agent integration](docs/agent-interface.md): read-only CLI and versioned record format.
@@ -66,8 +68,8 @@ python3 -m unittest discover -s worker -v
 python3 -m unittest discover -s tests -v
 ```
 
-Each person supplies their own OAuth configuration, signing identity and local model.
-Google linking is **not** ready-to-use through a shared project. The phone apps' Drive
+Each person (or their organization) supplies the OAuth clients, signing identity and local
+model; nothing is shared through this repository. The phone apps' Drive
 scope is `drive.file`; desktop authorization is separately configured and may be broader.
 The reference combination is **Android + macOS**. **iPhone + macOS** is new: tested in
 the simulator, not yet on a physical iPhone ([verification](docs/verification.md#ios-client)).
@@ -91,7 +93,7 @@ private audio or private transcript is included. See [release checklist](docs/re
 
 MIT for repository code; third-party tools/dependencies keep their own licenses.
 
-### New prototype: local voice and short notes
+### Android prototype: local voice and short notes
 
 The Android home screen now separates **recording**, **listening without saving**
 and **microphone off**. Optional offline controls require the model and explicit opt-in.
