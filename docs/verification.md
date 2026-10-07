@@ -193,3 +193,37 @@ Still not verified (do these before handing the guides to someone, see
   Whether the Desktop client sees the phone's `drive.file` uploads is still open.
 - The text of Homebrew's "Next steps" on Apple silicon. The two PATH lines in the worker
   guide are the usual ones for `/opt/homebrew`; they were not run here.
+
+## iOS and worker setup: second install test — 2026-10-07
+
+A second first-time install test (same kind of Mac, no Apple Account, Google account or
+rclone remote) found 17 more points. Fixed in `configure.py`, `check.py`, `bin/capture`
+and `worker/onboarding.py`, the guides, a Spanish quick start (`docs/ios.es.md`) and an
+agent setup procedure (`.claude/skills/captura-setup/SKILL.md`). Same Mac: macOS 26.1,
+**Xcode 26.1**, iPhone 17 simulator.
+
+Checked here:
+- The project's upgrade stamps now say 2700 (`LastUpgradeCheck`, `LastSwiftUpdateCheck`,
+  the scheme's `LastUpgradeVersion`). Xcode 26.1 builds and tests the project with them
+  and leaves them unchanged.
+- `swift test`: 462 tests. Hosted app tests on the iPhone 17 simulator: 252 tests,
+  0 failures, 6 skipped (the opt-in microphone and speech tests, which were not run, so
+  no microphone audio was recorded; the Data Protection test; the configured-build test).
+  Device compile for `generic/platform=iOS` with `CODE_SIGNING_ALLOWED=NO`: succeeded.
+- Python: 18 tests in `worker/` and 103 in `tests/`, on Python 3.9.6 and 3.14.3; the
+  publication check. New tests cover the guide's placeholders and examples being refused
+  (bundle ID, client ID, Workspace domain), capital letters refused with the lowercase
+  value, `configure.py --bundle-id` alone, the same exit status for "no team" on every run,
+  scheme-only and pre-settings project changes in `check.py`, one command or one sentence
+  per `Next:` line in both tools, doctor's `Warn:` lines and labels in words, the model
+  fallback order, scopes other than `drive.file`/`drive.readonly`, the refused-account
+  command, probe without counters, and the default-branch check refusing a foreign origin.
+- The pseudo-terminal test helper waited forever when the doctor JSON did not fit the
+  pipe buffer macOS gave it; it now reads stdout while the command runs.
+
+Still not verified: everything listed in the previous section, in particular whether
+Xcode 27 offers "Update to recommended settings" for reasons other than the stamps, and
+the labels of a Spanish macOS 26.6 (Configuración del Sistema, Acerca de esta Mac,
+Usuarios y grupos, Permitir siempre), which follow Apple's Latin American Spanish naming
+but were not seen on a Mac set to Spanish. `check_public_tree.py --default-branch` still
+fails here until the iOS branch is merged and pushed.
