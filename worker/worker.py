@@ -265,7 +265,8 @@ def run(config, probe=False, drive_factory=Drive):
     root.mkdir(parents=True, exist_ok=True, mode=0o700)
     os.chmod(root, 0o700)
     with lock(root):
-        status = dict(at=time.time(), state='checking', downloaded=0, transcribed=0, quarantined=0, errors=[])
+        # Local time with its UTC offset: readable in Terminal and in the launchd log.
+        status = dict(at=datetime.now().astimezone().isoformat(timespec='seconds'), state='checking', downloaded=0, transcribed=0, quarantined=0, errors=[])
         try:
             drive = drive_factory(config)
             account = drive.get('about', fields='user(emailAddress)')['user']['emailAddress']

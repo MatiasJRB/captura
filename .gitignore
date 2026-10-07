@@ -22,3 +22,12 @@ models/
 .impeccable/*
 !.impeccable/design.json
 .local/
+# iOS
+ios/Config/Captura.local.xcconfig
+DerivedData/
+xcuserdata/
+*.xcuserstate
+*.ipa
+*.xcarchive
+ios/CapturaCore/.build/
+ios/CapturaCore/.swiftpm/

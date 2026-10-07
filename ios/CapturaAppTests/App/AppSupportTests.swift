@@ -1,0 +1,85 @@
+import Foundation
+import XCTest
+@testable import Captura
+
+#if DEBUG
+final class LaunchOptionsTests: XCTestCase {
+    func testParsesBothAutomationFlags() {
+        let options = LaunchOptions.parse(["Captura", "-CapturaAutoRecordSeconds", "6", "-CapturaChunkSeconds", "3"])
+        XCTAssertEqual(options, LaunchOptions(autoRecordSeconds: 6, chunkSeconds: 3))
+    }
+
+    func testNoFlagsMeansNormalLaunch() {
+        XCTAssertEqual(LaunchOptions.parse(["Captura"]), LaunchOptions())
+    }
+
+    func testInvalidOrOutOfRangeValuesAreIgnored() {
+        XCTAssertNil(LaunchOptions.parse(["-CapturaAutoRecordSeconds", "abc"]).autoRecordSeconds)
+        XCTAssertNil(LaunchOptions.parse(["-CapturaAutoRecordSeconds", "0"]).autoRecordSeconds)
+        XCTAssertNil(LaunchOptions.parse(["-CapturaAutoRecordSeconds"]).autoRecordSeconds)
+        XCTAssertNil(LaunchOptions.parse(["-CapturaChunkSeconds", "1"]).chunkSeconds)
+        XCTAssertNil(LaunchOptions.parse(["-CapturaChunkSeconds", "nan"]).chunkSeconds)
+        XCTAssertNil(LaunchOptions.parse(["-CapturaChunkSeconds", "3600"]).chunkSeconds)
+    }
+
+    func testTheTestHostIsLaunchedWithoutAutomation() {
+        XCTAssertNil(LaunchOptions.current.autoRecordSeconds)
+    }
+}
+#endif
+
+final class RecordingRowTests: XCTestCase {
+    func testStartDateComesFromTheChunkName() throws {
+        let utc = try XCTUnwrap(TimeZone(identifier: "UTC"))
+        let date = RecordingRow.startDate(fromChunkName: "personal-capture-20261006-174503-00000000-0000-4000-8000-000000000003.m4a", timeZone: utc)
+        XCTAssertEqual(date, Date(timeIntervalSince1970: 1_791_308_703))
+        XCTAssertNil(RecordingRow.startDate(fromChunkName: "notes.m4a"))
+    }
+
+    func testStartDateUsesTheGivenTimeZone() throws {
+        let mexico = try XCTUnwrap(TimeZone(identifier: "America/Mexico_City"))
+        let date = RecordingRow.startDate(fromChunkName: "personal-capture-20261006-114503-00000000-0000-4000-8000-000000000003.m4a.partial", timeZone: mexico)
+        XCTAssertEqual(date, Date(timeIntervalSince1970: 1_791_308_703))
+    }
+
+    func testMalformedChunkStampsHaveNoDate() throws {
+        let utc = try XCTUnwrap(TimeZone(identifier: "UTC"))
+        for name in [
+            "personal-capture-20261306-174503-x.m4a", // month 13
+            "personal-capture-20260230-120000-x.m4a", // 30 February
+            "personal-capture-20261006-254503-x.m4a", // hour 25
+            "personal-capture-2026100a-174503-x.m4a",
+            "personal-capture-20261006_174503-x.m4a",
+            "personal-capture-2026",
+            "personal-capture-note-6f9619ff-8b86-d011-b42d-00c04fc964ff.m4a",
+        ] {
+            XCTAssertNil(RecordingRow.startDate(fromChunkName: name, timeZone: utc), name)
+        }
+    }
+
+    func testRowsAreNewestFirstWithIncompleteFilesLast() {
+        let older = URL(fileURLWithPath: "/tmp/personal-capture-20261006-100000-00000000-0000-4000-8000-000000000004.m4a")
+        let newer = URL(fileURLWithPath: "/tmp/personal-capture-20261006-110000-00000000-0000-4000-8000-000000000005.m4a")
+        let partial = URL(fileURLWithPath: "/tmp/Quarantine/personal-capture-20261006-120000-00000000-0000-4000-8000-000000000006.m4a.partial")
+        let rows = RecordingRow.build(closedChunks: [older, newer], items: [], quarantinedFiles: [partial])
+        XCTAssertEqual(rows.map(\.fileName), [newer.lastPathComponent, older.lastPathComponent, partial.lastPathComponent])
+        XCTAssertEqual(rows.map(\.status), [.localOnly, .localOnly, .incomplete])
+    }
+}
+
+final class LogPrivacyTests: XCTestCase {
+    func testPublicSummaryLeavesOutPathsAndChunkNames() throws {
+        let partial = "/private/var/mobile/Containers/Data/Application/0B9C6A2E/Library/Application Support/Captura/Recordings/personal-capture-20261006-101500-0b9c6a2e-1111-2222-3333-444455556666.m4a.partial"
+        let error = NSError(domain: NSCocoaErrorDomain, code: NSFileWriteFileExistsError, userInfo: [
+            NSFilePathErrorKey: partial,
+            NSURLErrorKey: URL(fileURLWithPath: partial),
+            "NSDestinationFilePath": partial.replacingOccurrences(of: ".partial", with: ""),
+        ])
+        XCTAssertTrue(String(describing: error).contains("personal-capture-"), "precondition: the description has the path")
+
+        let summary = LogPrivacy.publicSummary(of: error)
+
+        XCTAssertEqual(summary, "NSCocoaErrorDomain 516")
+        XCTAssertFalse(summary.contains("/"))
+    }
+}

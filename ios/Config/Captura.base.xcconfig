@@ -1,0 +1,14 @@
+// Safe defaults so a fresh clone builds. Personal values belong in the git-ignored
+// Captura.local.xcconfig: run `python3 ios/scripts/configure.py` (docs/ios.md, step 4).
+CAPTURA_BUNDLE_ID = org.example.captura
+CAPTURA_DEVELOPMENT_TEAM =
+CAPTURA_GOOGLE_IOS_CLIENT_ID =
+CAPTURA_GOOGLE_REVERSED_CLIENT_ID = org.example.captura.oauth
+CAPTURA_GOOGLE_HOSTED_DOMAIN =
+
+// The bundle ID and team as compilation conditions (CAPTURA_TEAM_ alone means no team).
+// ios/Captura/App/SetupCheck.swift uses them to stop a signed iPhone build that still has
+// the placeholder bundle ID, with a message that points to configure.py.
+SWIFT_ACTIVE_COMPILATION_CONDITIONS = $(inherited) CAPTURA_BUNDLE_$(CAPTURA_BUNDLE_ID:c99extidentifier) CAPTURA_TEAM_$(DEVELOPMENT_TEAM:c99extidentifier)
+
+#include? "Captura.local.xcconfig"
