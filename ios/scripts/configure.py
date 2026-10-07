@@ -4,8 +4,9 @@
 Python 3 standard library only. No network, no downloads. An iOS OAuth client ID and an
 Apple team ID are identifiers, not secrets; nothing secret is read or printed.
 
-    python3 ios/scripts/configure.py --bundle-id com.yourname.captura \\
-        --google-client-id 1234-abc.apps.googleusercontent.com [--hosted-domain example.org]
+    python3 ios/scripts/configure.py --bundle-id YOUR-BUNDLE-ID   # check it; writes nothing
+    python3 ios/scripts/configure.py --bundle-id YOUR-BUNDLE-ID \\
+        --google-client-id PASTE-THE-IOS-CLIENT-ID [--hosted-domain YOUR-WORKSPACE-DOMAIN]
     python3 ios/scripts/configure.py                      # fill in the team after Xcode sign-in
     python3 ios/scripts/configure.py --team ABCDE12345    # set the team explicitly
     python3 ios/scripts/configure.py --adopt-xcode-team   # move a team picked in Xcode here
@@ -21,8 +22,11 @@ import tempfile
 
 ROOT = Path(__file__).resolve().parents[2]
 LOCAL = Path('ios/Config/Captura.local.xcconfig')
-PROJECT = Path('ios/Captura.xcodeproj/project.pbxproj')
+PROJECT_DIR = Path('ios/Captura.xcodeproj')
+PROJECT = PROJECT_DIR / 'project.pbxproj'
 SCRIPT = 'python3 ios/scripts/configure.py'
+# The command as docs/ios.md step 4 shows it, placeholders included.
+CREATE_COMMAND = f'{SCRIPT} --bundle-id com.yourname.captura --google-client-id PASTE-THE-IOS-CLIENT-ID'
 
 KEY_BUNDLE = 'CAPTURA_BUNDLE_ID'
 KEY_TEAM = 'CAPTURA_DEVELOPMENT_TEAM'
@@ -34,6 +38,12 @@ CLIENT_SUFFIX = '.apps.googleusercontent.com'
 REVERSED_PREFIX = 'com.googleusercontent.apps.'
 TEAM_PATTERN = re.compile(r'[A-Z0-9]{10}')
 PLACEHOLDER_TEAM = '$(CAPTURA_DEVELOPMENT_TEAM)'
+# Stand-ins the guides and this script show. Accepting one would register an app ID that
+# is not yours (a free account gets 10 per week) or make every Google sign-in fail.
+PLACEHOLDER_WORDS = ('example', 'yourname', 'your-name', 'your_name', 'yourcompany', 'yourdomain',
+                     'your-', 'paste')
+GUIDE_BUNDLE_IDS = ('com.anagarcia.captura',)
+BUNDLE_HINT = 'Use "com." + your own name + ".captura", in lowercase with no spaces or accents.'
 
 
 class ConfigError(Exception):
@@ -52,19 +62,28 @@ def _clean(value):
     return (value or '').strip().strip('"\'').strip()
 
 
+def _placeholder(value):
+    return any(word in value.lower() for word in PLACEHOLDER_WORDS)
+
+
 def normalize_bundle_id(value):
-    """Returns the bundle ID in lowercase, the form the docs and the Google client use."""
-    bundle = _clean(value).lower()
+    """Returns the bundle ID. It must already be lowercase: the Google admin enters exactly
+    this value in the iOS client, so the script never changes it behind their back."""
+    raw = _clean(value)
+    bundle = raw.lower()
     if not bundle:
-        raise ConfigError('The bundle ID is empty. Use something unique to you, '
-                          'for example com.yourname.captura.')
-    if 'example' in bundle:
-        raise ConfigError(f'"{bundle}" is the example bundle ID. Use one unique to you, '
-                          'for example com.yourname.captura.')
+        raise ConfigError('The bundle ID is empty. ' + BUNDLE_HINT)
+    if _placeholder(bundle):
+        raise ConfigError(f'"{raw}" is an example from the guide, not your own bundle ID. ' + BUNDLE_HINT)
+    if bundle in GUIDE_BUNDLE_IDS:
+        raise ConfigError(f'"{raw}" is the guide\'s example. ' + BUNDLE_HINT +
+                          ' If that really is your name, add your initials or second surname.')
     if (len(bundle) > 155 or '..' in bundle
-            or not re.fullmatch(r'[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+', bundle)):
-        raise ConfigError(f'"{bundle}" is not a valid bundle ID. Use letters, digits, hyphens '
-                          'and dots, for example com.yourname.captura.')
+            or not re.fullmatch(r'[a-z0-9-]+(\.[a-z0-9-]+)+', bundle)):
+        raise ConfigError(f'"{raw}" is not a valid bundle ID. ' + BUNDLE_HINT)
+    if raw != bundle:
+        raise ConfigError(f'"{raw}" has capital letters; use {bundle}. Give the Google admin exactly '
+                          'that lowercase value.')
     return bundle
 
 
@@ -76,15 +95,19 @@ def normalize_client_id(value):
     if not client:
         raise ConfigError('The Google client ID is empty. Copy the Client ID of the iOS '
                           'OAuth client from Google Cloud.')
+    if _placeholder(client):
+        raise ConfigError(f'"{client}" is the placeholder from the guide. Put the Client ID of your '
+                          f'own iOS OAuth client there (it ends in {CLIENT_SUFFIX}).')
     if not client.lower().endswith(CLIENT_SUFFIX):
         raise ConfigError(f'"{client}" is not a Google client ID: it must end in {CLIENT_SUFFIX}. '
                           'Copy the Client ID of the iOS OAuth client.')
     prefix = client[:-len(CLIENT_SUFFIX)]
     if not re.fullmatch(r'[0-9]+-[A-Za-z0-9_-]+', prefix):
-        raise ConfigError(f'"{client}" is not a Google client ID. It looks like '
-                          f'123456789012-abc...{CLIENT_SUFFIX}.')
+        raise ConfigError(f'"{client}" is not a Google client ID. It starts with the project '
+                          f'number, a hyphen and letters and digits, and ends in {CLIENT_SUFFIX}.')
     number = prefix.split('-', 1)[0]
-    if 'example' in client.lower() or set(number) == {'0'}:
+    # Made-up project numbers (000000000000, 1234..., 123456789012) only appear in examples.
+    if len(set(number)) == 1 or (len(number) >= 4 and '12345678901234567890'.startswith(number)):
         raise ConfigError('That is the example client ID. Copy the Client ID of your own '
                           'iOS OAuth client from Google Cloud.')
     return prefix + CLIENT_SUFFIX
@@ -100,13 +123,13 @@ def normalize_hosted_domain(value):
         domain = domain[1:]
     if not domain:
         return ''
-    if 'example' in domain:
-        raise ConfigError(f'"{domain}" is an example domain. Leave it out, or use your Google '
-                          'Workspace domain.')
+    if _placeholder(domain):
+        raise ConfigError(f'"{domain}" is an example from the guide. Leave --hosted-domain out, or use '
+                          'your Google Workspace domain: the part after @ in your work address.')
     labels = domain.split('.')
     if len(labels) < 2 or not all(re.fullmatch(r'[a-z0-9]([a-z0-9-]*[a-z0-9])?', l) for l in labels):
-        raise ConfigError(f'"{domain}" is not a domain. Use only the Workspace domain, '
-                          'for example yourcompany.com, without @ or https://.')
+        raise ConfigError(f'"{domain}" is not a domain. Use only your Google Workspace domain (the part '
+                          'after @ in your work address), without @ or https://.')
     return domain
 
 
@@ -237,19 +260,22 @@ def xcode_is_running():
     return result is not None and result.returncode == 0
 
 
-# Stamps Xcode writes when it opens the project or when someone accepts "Update to
-# recommended settings". Undoing them is harmless: Xcode only offers the update again.
-UPGRADE_STAMP = re.compile(r'(LastUpgradeCheck|LastSwiftUpdateCheck)\s*=\s*\d+;')
+# Stamps Xcode writes into the project and the shared scheme when it opens the project or
+# when someone accepts "Update to recommended settings". Undoing them is harmless: Xcode
+# only offers the update again.
+UPGRADE_STAMP = re.compile(r'(LastUpgradeCheck|LastSwiftUpdateCheck)\s*=\s*\d+;'
+                           r'|LastUpgradeVersion\s*=\s*"\d+"')
 
 
 def project_team(root):
-    """Team that Xcode's Signing menu wrote into the tracked project file.
+    """Team that Xcode's Signing menu wrote into the tracked project files.
 
+    Looks at every tracked file in ios/Captura.xcodeproj (project and shared scheme).
     Returns (team, unexpected_lines, staged, upgrade_lines). `upgrade_lines` are only
     Xcode's upgrade-check stamps, safe to undo. Raises ConfigError when Git cannot tell.
     """
-    staged = run(['git', 'diff', '--cached', '--quiet', '--', str(PROJECT)], cwd=root)
-    diff = run(['git', 'diff', '--no-color', '--no-ext-diff', '-U0', '--', str(PROJECT)], cwd=root)
+    staged = run(['git', 'diff', '--cached', '--quiet', '--', str(PROJECT_DIR)], cwd=root)
+    diff = run(['git', 'diff', '--no-color', '--no-ext-diff', '-U0', '--', str(PROJECT_DIR)], cwd=root)
     if staged is None or diff is None or diff.returncode != 0 or staged.returncode not in (0, 1):
         raise ConfigError('Git could not compare the Xcode project with the downloaded version. '
                           'Run this from a folder created with "git clone", and pass the team '
@@ -279,8 +305,8 @@ def project_team(root):
 
 
 def restore_project(root):
-    result = run(['git', 'checkout', '--', str(PROJECT)], cwd=root)
-    check = run(['git', 'diff', '--quiet', '--', str(PROJECT)], cwd=root)
+    result = run(['git', 'checkout', '--', str(PROJECT_DIR)], cwd=root)
+    check = run(['git', 'diff', '--quiet', '--', str(PROJECT_DIR)], cwd=root)
     return result is not None and result.returncode == 0 and check is not None and check.returncode == 0
 
 
@@ -291,8 +317,8 @@ def adopt_from_project(root):
                           'write the team back into the project, then run this again.')
     team, unexpected, staged, _ = project_team(root)
     if staged:
-        raise ConfigError(f'{PROJECT} has changes staged in Git. Unstage them first '
-                          f'("git restore --staged {PROJECT}"), then run this again.')
+        raise ConfigError(f'{PROJECT_DIR} has changes staged in Git. Unstage them first '
+                          f'("git restore --staged {PROJECT_DIR}"), then run this again.')
     if team is None:
         raise ConfigError('Xcode has not written a team into the project. In Xcode, select '
                           'the Captura project > target Captura > Signing & Capabilities, pick '
@@ -304,12 +330,12 @@ def adopt_from_project(root):
     if unexpected:
         shown = '\n    '.join(unexpected[:6])
         raise ConfigError(
-            f'The project file has other changes besides the team ({team}), so it was not '
+            f'The project has other changes besides the team ({team}), so it was not '
             f'restored automatically:\n    {shown}\n'
             'They usually come from Xcode\'s "Update to recommended settings". Undo them '
-            '(this also takes the team out of the project file). Keep them only if you edited '
+            '(this also takes the team out of the project). Keep them only if you edited '
             'the project on purpose:\n'
-            f'  git checkout -- {PROJECT}\n'
+            f'  git checkout -- {PROJECT_DIR}\n'
             f'Then save the team in your settings:\n'
             f'  {SCRIPT} --team {team}')
     return team
@@ -323,8 +349,9 @@ def choose_detected_team():
     if not teams:
         return None, ('No Apple team found in Xcode yet. Open Xcode > Settings > Apple Accounts, '
                       'sign in with your Apple Account, close Settings, then run '
-                      f'"{SCRIPT}" again. If it still finds none, go on with docs/ios.md: '
-                      'step 6 (Open the project and check signing) sets the team.')
+                      f'"{SCRIPT}" again. If it still finds none, carry on with docs/ios.md: '
+                      'run step 5 (python3 ios/scripts/check.py), then step 6 (Open the project '
+                      'and check signing) sets the team.')
     listed = '\n  '.join(describe(t) for t in teams)
     return None, ('Xcode knows several teams:\n  ' + listed +
                   f'\nChoose one and run: {SCRIPT} --team TEAMID')
@@ -345,10 +372,11 @@ def parse_args(argv):
         prog=SCRIPT,
         description='Write ios/Config/Captura.local.xcconfig (git-ignored) for your own '
                     'Captura iOS build. No network; nothing secret is printed.')
-    parser.add_argument('--bundle-id', help='unique to you, e.g. com.yourname.captura')
+    parser.add_argument('--bundle-id', help='unique to you: "com." + your name + ".captura", lowercase. '
+                                            'Alone, it only checks the value and writes nothing')
     parser.add_argument('--google-client-id', help='Client ID of your Google "iOS" OAuth client')
     parser.add_argument('--hosted-domain', default='',
-                        help='optional Google Workspace domain, e.g. yourcompany.com')
+                        help='optional Google Workspace domain (the part after @ in your work address)')
     parser.add_argument('--team', help='Apple team ID (10 characters); detected from Xcode if omitted')
     parser.add_argument('--adopt-xcode-team', action='store_true',
                         help='take the team you picked in Xcode\'s Signing menu, save it here '
@@ -357,8 +385,11 @@ def parse_args(argv):
                         help='replace an existing Captura.local.xcconfig (the Apple team saved '
                              'in it is kept unless you pass --team)')
     args = parser.parse_args(argv)
-    if bool(args.bundle_id) != bool(args.google_client_id):
-        parser.error('--bundle-id and --google-client-id go together')
+    if args.google_client_id and not args.bundle_id:
+        parser.error('--google-client-id needs --bundle-id too')
+    if args.bundle_id and not args.google_client_id and (args.team or args.adopt_xcode_team or args.force):
+        parser.error('--bundle-id without --google-client-id only checks the bundle ID; '
+                     'run --team, --adopt-xcode-team or --force on their own')
     if args.team and args.adopt_xcode_team:
         parser.error('use either --team or --adopt-xcode-team')
     return args
@@ -380,6 +411,15 @@ def main(argv=None):
         else:
             team = None
 
+        if args.bundle_id and not args.google_client_id:
+            # Before the admin has made the iOS client: check the value they need.
+            bundle = normalize_bundle_id(args.bundle_id)
+            normalize_hosted_domain(args.hosted_domain)
+            print(f'Bundle ID {bundle} looks right. Nothing was written.')
+            print(f'Send the Google admin exactly this value: {bundle}')
+            print('When the admin sends you the iOS client ID, save your settings with:')
+            print(f'Next: {SCRIPT} --bundle-id {bundle} --google-client-id PASTE-THE-IOS-CLIENT-ID')
+            return 0
         if args.bundle_id:
             if local.exists() and not args.force:
                 raise AlreadyConfigured(f'{LOCAL} exists from an earlier run. Keep it, or replace it '
@@ -395,9 +435,6 @@ def main(argv=None):
                 else:
                     team, team_note = choose_detected_team()
             write_atomically(local, render_xcconfig(bundle, team or '', client, domain))
-            if bundle != _clean(args.bundle_id):
-                print(f'Using the bundle ID in lowercase: {bundle}. Give the Google admin '
-                      'exactly this value.')
             print(f'Wrote {LOCAL}:')
             print(f'  bundle ID       {bundle}')
             print(f'  Google client   {client}')
@@ -407,9 +444,8 @@ def main(argv=None):
         else:
             if not local.exists():
                 raise ConfigError(
-                    f'{LOCAL} does not exist yet. Create it first:\n'
-                    f'  {SCRIPT} --bundle-id com.yourname.captura '
-                    '--google-client-id YOUR-CLIENT-ID.apps.googleusercontent.com')
+                    f'{LOCAL} does not exist yet. Create it first (docs/ios.md step 4):\n'
+                    f'  {CREATE_COMMAND}')
             text = local.read_text(encoding='utf-8')
             current, _ = read_xcconfig(local)
             existing = current.get(KEY_TEAM, '')
@@ -425,8 +461,9 @@ def main(argv=None):
                 print('Next: python3 ios/scripts/check.py')
                 return 0
             if team is None:
-                print(team_note, file=sys.stderr)
-                return 1
+                # Same outcome as the first run without a team: expected, not an error.
+                print(team_note)
+                return 0
             if team != existing:
                 write_atomically(local, set_team_in_text(text, team))
             print(f'Saved Apple team {team} in {LOCAL}'
@@ -436,9 +473,10 @@ def main(argv=None):
             print(team_note)
         if adopted:
             if restore_project(root):
-                print(f'Restored {PROJECT} to the downloaded version, so "git pull" keeps working.')
+                print(f'Restored {PROJECT_DIR} to the downloaded version, so "git pull" keeps working.')
             else:
-                print(f'Could not restore {PROJECT}. Run: git checkout -- {PROJECT}', file=sys.stderr)
+                print(f'Could not restore {PROJECT_DIR}. Undo the change with:', file=sys.stderr)
+                print(f'Next: git checkout -- {PROJECT_DIR}', file=sys.stderr)
                 return 1
         if not team:
             return 0

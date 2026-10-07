@@ -3,8 +3,9 @@
 
     python3 ios/scripts/check.py
 
-Each line says what was found; anything marked FAIL comes with the next step. The exit
-status is 1 while something blocks installing on the iPhone, 0 otherwise.
+Each line says what was found; anything marked FAIL comes with the next step. A `Next:`
+line holds either one command to paste or a sentence, never both. The exit status is 1
+while something blocks installing on the iPhone, 0 otherwise.
 """
 import argparse
 import json
@@ -21,8 +22,7 @@ from configure import ConfigError, run  # noqa: E402
 OK, WARN, FAIL, INFO = 'ok', 'warn', 'FAIL', 'info'
 XCODE_PATH = '/Applications/Xcode.app/Contents/Developer'
 CONFIGURE = configure.SCRIPT
-CREATE_LOCAL = (f'{CONFIGURE} --bundle-id com.yourname.captura '
-                '--google-client-id YOUR-CLIENT-ID.apps.googleusercontent.com')
+CREATE_LOCAL = configure.CREATE_COMMAND
 NO_TEAM = 'not set and no team found in Xcode'
 STEP_6 = 'step 6 of docs/ios.md (Open the project and check signing)'
 
@@ -31,8 +31,9 @@ class Report:
     def __init__(self):
         self.lines = []
 
-    def add(self, status, title, detail='', next_step=''):
-        self.lines.append((status, title, detail, next_step))
+    def add(self, status, title, detail='', next_step='', note=''):
+        """`next_step` is one command or one sentence; `note` is prose shown above it."""
+        self.lines.append((status, title, detail, next_step, note))
 
     @property
     def blocking(self):
@@ -40,11 +41,12 @@ class Report:
 
     def render(self):
         out = ['Captura iOS check (read-only, no network)', '']
-        for status, title, detail, next_step in self.lines:
+        for status, title, detail, next_step, note in self.lines:
             out.append(f'  {status:<5} {title}' + (f': {detail}' if detail else ''))
+            if note:
+                out.append('        ' + note)
             if next_step:
-                for index, step in enumerate(next_step.splitlines()):
-                    out.append(('        Next: ' if index == 0 else '              ') + step)
+                out.append('        Next: ' + next_step)
         out.append('')
         if [line[:2] for line in self.blocking] == [(FAIL, 'Apple team')] and self.blocking[0][2] == NO_TEAM:
             # Expected before step 6: Xcode only knows the team once it has been picked there.
@@ -78,7 +80,8 @@ def check_mac(report):
                    'Xcode 27 runs only on Apple silicon (M1 or newer).')
     elif tuple(parts[:2]) < (26, 6):
         report.add(WARN, 'Mac', f'Apple silicon, macOS {version}',
-                   'Xcode 27 needs macOS 26.6 or later: System Settings > General > Software Update.')
+                   'Xcode 27 needs macOS 26.6 or later: System Settings > General > Software Update '
+                   '(Configuración del Sistema > General > Actualización de software).')
     else:
         report.add(OK, 'Mac', f'Apple silicon, macOS {version}')
 
@@ -92,10 +95,11 @@ def check_xcode(report):
     if version is None or version.returncode != 0:
         if 'license' in output.lower():
             report.add(FAIL, 'Xcode', 'the Xcode license has not been accepted',
-                       'Open Xcode once and accept the license (or run: sudo xcodebuild -license accept).')
+                       'Open Xcode once and accept the license.')
         elif path and 'CommandLineTools' in path and Path(XCODE_PATH).is_dir():
             report.add(FAIL, 'Xcode', 'installed, but the command line uses the Command Line Tools',
-                       f'Run: sudo xcode-select --switch {XCODE_PATH}')
+                       f'sudo xcode-select --switch {XCODE_PATH}',
+                       note='This asks for your Mac password.')
         else:
             report.add(FAIL, 'Xcode', 'not found',
                        'Install Xcode from the Mac App Store (free, about 3 GB), open it once, '
@@ -120,7 +124,7 @@ def check_xcode(report):
     first = run(['xcodebuild', '-checkFirstLaunchStatus'], timeout=60)
     if first is not None and first.returncode != 0:
         report.add(WARN, 'Xcode first launch', 'Xcode has not finished installing its components',
-                   'Open Xcode and let it finish (or run: sudo xcodebuild -runFirstLaunch).')
+                   'Open Xcode and let it finish.')
     return True
 
 
@@ -130,8 +134,7 @@ def check_platform(report):
     found = re.findall(r'-sdk\s+iphoneos(\d+(?:\.\d+)*)', text(sdks))
     if not found:
         report.add(FAIL, 'iOS platform', 'not installed',
-                   'Open Xcode > Settings > Components and click Get next to iOS (several GB),\n'
-                   'or run: xcodebuild -downloadPlatform iOS')
+                   'Open Xcode > Settings > Components and click Get next to iOS (several GB).')
         return False
     report.add(OK, 'iOS platform', 'iOS SDK ' + ', '.join(sorted(set(found))))
     return True
@@ -141,7 +144,8 @@ def check_local_config(report, root):
     """Returns (values dict or None, team or '')."""
     local = root / configure.LOCAL
     if not local.is_file():
-        report.add(FAIL, 'Your settings', f'{configure.LOCAL} does not exist', 'Run: ' + CREATE_LOCAL)
+        report.add(FAIL, 'Your settings', f'{configure.LOCAL} does not exist', CREATE_LOCAL,
+                   note='Put your bundle ID and the iOS client ID in place of the examples (docs/ios.md step 4).')
         return None, ''
     values, truncated = configure.read_xcconfig(local)
     problems = []
@@ -149,8 +153,6 @@ def check_local_config(report, root):
         problems.append('a value contains "//", which cuts it short: ' + ', '.join(truncated))
     try:
         bundle = configure.normalize_bundle_id(values.get(configure.KEY_BUNDLE, ''))
-        if bundle != values.get(configure.KEY_BUNDLE, '').strip():
-            problems.append(f'{configure.KEY_BUNDLE} has capital letters; use {bundle}')
     except ConfigError as error:
         problems.append(f'{configure.KEY_BUNDLE}: {error}')
         bundle = None
@@ -169,8 +171,8 @@ def check_local_config(report, root):
         problems.append(f'{configure.KEY_DOMAIN}: {error}')
         domain = None
     if problems:
-        report.add(FAIL, 'Your settings', '; '.join(problems),
-                   'Fix the values by running again with --force:\n' + CREATE_LOCAL + ' --force')
+        report.add(FAIL, 'Your settings', '; '.join(problems), CREATE_LOCAL + ' --force',
+                   note='Save your settings again with --force, with your own values in place of the examples.')
         return None, ''
     report.add(OK, 'Your settings', f'bundle ID {bundle}, Google client {client}'
                + (f', Workspace {domain}' if domain else ''))
@@ -187,41 +189,43 @@ def check_team(report, root, team):
         project_team, unexpected, _, upgrade = configure.project_team(root)
     except ConfigError:
         project_team, unexpected, upgrade = None, [], []
+    quit_first = 'Quit Xcode first (Xcode > Quit Xcode).'
     if team:
         try:
             team = configure.normalize_team(team)
         except ConfigError as error:
-            report.add(FAIL, 'Apple team', str(error), f'Run: {CONFIGURE} --team TEAMID')
-            return ''
-        report.add(OK, 'Apple team', team)
-        if project_team:
-            report.add(WARN, 'Xcode project', 'Xcode wrote a team into the tracked project file',
-                       f'Quit Xcode, then run: {CONFIGURE} --adopt-xcode-team')
-        elif unexpected or upgrade:
-            report.add(WARN, 'Xcode project',
-                       'the tracked project file has changes (for example "Update to recommended '
-                       'settings"); "git pull" can stop on them',
-                       'Unless you changed the project on purpose, quit Xcode and undo them:\n'
-                       f'git checkout -- {configure.PROJECT}')
-        return team
-    if project_team:
+            report.add(FAIL, 'Apple team', str(error), f'{CONFIGURE} --team TEAMID')
+            team = ''
+        else:
+            report.add(OK, 'Apple team', team)
+            if project_team:
+                report.add(WARN, 'Xcode project', 'Xcode wrote a team into the tracked project file',
+                           f'{CONFIGURE} --adopt-xcode-team', note=quit_first)
+    elif project_team:
         report.add(FAIL, 'Apple team', f'picked in Xcode ({project_team}) but not saved in your settings',
-                   f'Quit Xcode, then run: {CONFIGURE} --adopt-xcode-team')
-        return ''
-    teams = configure.xcode_teams()
-    if len(teams) == 1:
-        report.add(FAIL, 'Apple team', 'not saved yet; Xcode knows ' + configure.describe(teams[0]),
-                   f'Run: {CONFIGURE}')
-    elif teams:
-        report.add(FAIL, 'Apple team', 'not saved yet; Xcode knows several: '
-                   + ', '.join(configure.describe(t) for t in teams),
-                   f'Run: {CONFIGURE} --team TEAMID')
+                   f'{CONFIGURE} --adopt-xcode-team', note=quit_first)
     else:
-        report.add(FAIL, 'Apple team', NO_TEAM,
-                   f'Open Xcode > Settings > Apple Accounts and sign in, then run: {CONFIGURE}\n'
-                   f'If it still finds none, continue with {STEP_6};\n'
-                   f'this clears after {CONFIGURE} --adopt-xcode-team.')
-    return ''
+        teams = configure.xcode_teams()
+        if len(teams) == 1:
+            report.add(FAIL, 'Apple team', 'not saved yet; Xcode knows ' + configure.describe(teams[0]),
+                       CONFIGURE)
+        elif teams:
+            report.add(FAIL, 'Apple team', 'not saved yet; Xcode knows several: '
+                       + ', '.join(configure.describe(t) for t in teams),
+                       f'{CONFIGURE} --team TEAMID', note='Put the team you want in place of TEAMID.')
+        else:
+            report.add(FAIL, 'Apple team', NO_TEAM, CONFIGURE,
+                       note='Open Xcode > Settings > Apple Accounts and sign in, then run the command '
+                            f'below. If it still finds none, continue with {STEP_6}; this clears '
+                            'after configure.py --adopt-xcode-team.')
+    if not project_team and (unexpected or upgrade):
+        # Checked with or without a team: a leftover change can stop "git pull" at the weekly reinstall.
+        report.add(WARN, 'Xcode project',
+                   f'tracked files in {configure.PROJECT_DIR} have changes (for example from "Update to '
+                   'recommended settings"); "git pull" can stop on them',
+                   f'git checkout -- {configure.PROJECT_DIR}',
+                   note='Unless you changed the project on purpose, quit Xcode and undo them.')
+    return team
 
 
 def check_build_settings(report, root, values, team):
@@ -245,7 +249,7 @@ def check_build_settings(report, root, values, team):
                    'Captura.base.xcconfig), then run this check again.')
     elif team and resolved_team != team:
         report.add(FAIL, 'Xcode reads your settings', f'Xcode uses team "{resolved_team}", not {team}',
-                   f'Quit Xcode, then run: {CONFIGURE} --adopt-xcode-team')
+                   f'{CONFIGURE} --adopt-xcode-team', note='Quit Xcode first (Xcode > Quit Xcode).')
     else:
         report.add(OK, 'Xcode reads your settings', f'bundle ID {bundle}'
                    + (f', team {resolved_team}' if resolved_team else ''))

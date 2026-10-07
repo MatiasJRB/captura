@@ -8,6 +8,7 @@ import io
 import os
 from pathlib import Path
 import plistlib
+import re
 import shutil
 import subprocess
 import sys
@@ -22,12 +23,14 @@ import check  # noqa: E402
 import configure  # noqa: E402
 import fake_tools  # noqa: E402
 
-CLIENT = '123456789012-fictionalclientabc.apps.googleusercontent.com'
-REVERSED = 'com.googleusercontent.apps.123456789012-fictionalclientabc'
+CLIENT = '481516234200-fictionalclientabc.apps.googleusercontent.com'
+REVERSED = 'com.googleusercontent.apps.481516234200-fictionalclientabc'
 BUNDLE = 'org.fictional.captura'
 TEAM = 'TEAMFAKE01'
 OTHER_TEAM = 'TEAMFAKE02'
-PROJECT = 'ios/Captura.xcodeproj/project.pbxproj'
+PROJECT_DIR = 'ios/Captura.xcodeproj'
+PROJECT = PROJECT_DIR + '/project.pbxproj'
+SCHEME = PROJECT_DIR + '/xcshareddata/xcschemes/Captura.xcscheme'
 LOCAL = 'ios/Config/Captura.local.xcconfig'
 GIT = shutil.which('git')
 
@@ -55,7 +58,7 @@ class Sandbox(unittest.TestCase):
         self._tmp = tempfile.TemporaryDirectory()
         tmp = Path(self._tmp.name)
         self.repo = tmp / 'repo'
-        for rel in (PROJECT, 'ios/Config/Captura.base.xcconfig', 'ios/scripts/configure.py',
+        for rel in (PROJECT, SCHEME, 'ios/Config/Captura.base.xcconfig', 'ios/scripts/configure.py',
                     'ios/scripts/check.py'):
             (self.repo / rel).parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(ROOT / rel, self.repo / rel)
@@ -106,16 +109,20 @@ class Sandbox(unittest.TestCase):
             text = text.replace('MARKETING_VERSION = 0.1.0;', 'MARKETING_VERSION = 0.2.0;', 1)
         path.write_text(text)
 
-    def xcode_stamps_upgrade(self):
-        """What a newer Xcode writes when it opens the project or applies recommended settings."""
-        path = self.repo / PROJECT
-        text = path.read_text()
-        self.assertIn('LastUpgradeCheck = 2610;', text)
-        path.write_text(text.replace('LastUpgradeCheck = 2610;', 'LastUpgradeCheck = 2700;')
-                        .replace('LastSwiftUpdateCheck = 2610;', 'LastSwiftUpdateCheck = 2700;'))
+    def xcode_stamps_upgrade(self, project=True, scheme=True):
+        """What a newer Xcode writes when it opens the project or applies recommended settings:
+        newer stamps in the project and in the shared scheme."""
+        for rel, pattern, new in ((PROJECT, r'(LastUpgradeCheck|LastSwiftUpdateCheck) = \d+;', r'\1 = 2810;'),
+                                  (SCHEME, r'LastUpgradeVersion = "\d+"', 'LastUpgradeVersion = "2810"')):
+            if (rel == PROJECT and not project) or (rel == SCHEME and not scheme):
+                continue
+            path = self.repo / rel
+            text, count = re.subn(pattern, new, path.read_text())
+            self.assertGreater(count, 0, rel)
+            path.write_text(text)
 
     def project_is_clean(self):
-        return self.git('status', '--porcelain', '--', PROJECT) == ''
+        return self.git('status', '--porcelain', '--', PROJECT_DIR) == ''
 
 
 class ConfigureTests(Sandbox):
@@ -148,6 +155,7 @@ class ConfigureTests(Sandbox):
         cases = [
             ('--bundle-id', 'com.example.captura'),
             ('--bundle-id', 'captura'),
+            ('--bundle-id', 'com.garcía.captura'),
             ('--google-client-id', '000000000000-example.apps.googleusercontent.com'),
             ('--google-client-id', 'fictional-secret-looking-value'),
             ('--hosted-domain', 'https://fictional.test'),
@@ -205,21 +213,70 @@ class ConfigureTests(Sandbox):
         self.assertEqual(self.local()['CAPTURA_DEVELOPMENT_TEAM'], TEAM)
         self.assertIn(f'Kept the Apple team saved earlier: {TEAM}', result.stdout)
 
-    def test_bundle_id_is_saved_in_lowercase(self):
+    def test_rejects_the_guides_placeholders_and_examples(self):
+        cases = [
+            ('--bundle-id', 'com.yourname.captura'),
+            ('--bundle-id', 'com.YourName.captura'),
+            ('--bundle-id', 'com.anagarcia.captura'),
+            ('--bundle-id', 'org.example.captura'),
+            ('--google-client-id', 'PASTE-THE-IOS-CLIENT-ID'),
+            ('--google-client-id', 'YOUR-CLIENT-ID.apps.googleusercontent.com'),
+            ('--google-client-id', '1234-abc.apps.googleusercontent.com'),
+            ('--google-client-id', '123456789012-abc.apps.googleusercontent.com'),
+            ('--hosted-domain', 'yourcompany.com'),
+            ('--hosted-domain', 'yourcompany.mx'),
+            ('--hosted-domain', 'example.org'),
+        ]
+        for flag, value in cases:
+            with self.subTest(flag=flag, value=value):
+                args = {'--bundle-id': BUNDLE, '--google-client-id': CLIENT, '--team': TEAM}
+                args[flag] = value
+                result = self.configure(*[x for pair in args.items() for x in pair])
+                self.assertEqual(result.returncode, 1, result.stdout)
+                self.assertRegex(result.stderr, r'example|placeholder')
+                self.assertFalse((self.repo / LOCAL).exists())
+                if flag == '--bundle-id':
+                    # The hint describes the pattern instead of showing a value that would pass.
+                    self.assertIn('"com." + your own name + ".captura"', result.stderr)
+                    self.assertNotIn('for example com.', result.stderr)
+
+    def test_capital_letters_in_the_bundle_id_are_refused_with_the_lowercase_value(self):
         result = self.configure('--bundle-id', 'Org.Fictional.Captura', '--google-client-id', CLIENT,
                                 '--team', TEAM)
+        self.assertEqual(result.returncode, 1, result.stdout)
+        self.assertIn(f'capital letters; use {BUNDLE}', result.stderr)
+        self.assertFalse((self.repo / LOCAL).exists())
+
+    def test_bundle_id_alone_is_checked_without_writing(self):
+        result = self.configure('--bundle-id', BUNDLE)
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(self.local()['CAPTURA_BUNDLE_ID'], BUNDLE)
-        self.assertIn(f'lowercase: {BUNDLE}', result.stdout)
+        self.assertIn(f'Send the Google admin exactly this value: {BUNDLE}', result.stdout)
+        self.assertIn(f'Next: python3 ios/scripts/configure.py --bundle-id {BUNDLE} --google-client-id ',
+                      result.stdout)
+        self.assertFalse((self.repo / LOCAL).exists())
+        capitals = self.configure('--bundle-id', 'Org.Fictional.Captura')
+        self.assertEqual(capitals.returncode, 1)
+        self.assertIn(f'use {BUNDLE}', capitals.stderr)
+        placeholder = self.configure('--bundle-id', 'com.yourname.captura')
+        self.assertEqual(placeholder.returncode, 1)
+        self.assertFalse((self.repo / LOCAL).exists())
+
+    def test_client_id_alone_asks_for_the_bundle_id(self):
+        result = self.configure('--google-client-id', CLIENT)
+        self.assertEqual(result.returncode, 2)
+        self.assertIn('--bundle-id', result.stderr)
+        self.assertFalse((self.repo / LOCAL).exists())
 
     def test_without_teams_it_writes_the_rest_and_explains_apple_accounts(self):
         result = self.configure('--bundle-id', BUNDLE, '--google-client-id', CLIENT)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(self.local()['CAPTURA_DEVELOPMENT_TEAM'], '')
         self.assertIn('Xcode > Settings > Apple Accounts', result.stdout)
-        self.assertIn('step 6', result.stdout)
+        self.assertIn('step 5 (python3 ios/scripts/check.py), then step 6', result.stdout)
         later = self.configure()
-        self.assertEqual(later.returncode, 1)
+        # Running it again with still no team is the same expected outcome, not an error.
+        self.assertEqual(later.returncode, 0, later.stderr)
+        self.assertIn('step 5 (python3 ios/scripts/check.py), then step 6', later.stdout)
         self.tools(teams=personal_teams(TEAM))
         after_sign_in = self.configure()
         self.assertEqual(after_sign_in.returncode, 0, after_sign_in.stderr)
@@ -252,14 +309,14 @@ class ConfigureTests(Sandbox):
         self.assertEqual(self.local()['CAPTURA_DEVELOPMENT_TEAM'], TEAM)
         self.assertTrue(self.project_is_clean())
 
-    def test_adopt_also_undoes_xcode_upgrade_stamps(self):
+    def test_adopt_also_undoes_xcode_upgrade_stamps_in_the_project_and_scheme(self):
         self.configure('--bundle-id', BUNDLE, '--google-client-id', CLIENT)
         self.xcode_picks_team()
         self.xcode_stamps_upgrade()
         result = self.configure('--adopt-xcode-team')
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(self.local()['CAPTURA_DEVELOPMENT_TEAM'], TEAM)
-        self.assertTrue(self.project_is_clean())
+        self.assertTrue(self.project_is_clean(), self.git('status', '--porcelain'))
 
     def test_adopt_refuses_other_project_changes_and_keeps_them(self):
         self.configure('--bundle-id', BUNDLE, '--google-client-id', CLIENT)
@@ -267,7 +324,7 @@ class ConfigureTests(Sandbox):
         result = self.configure('--adopt-xcode-team')
         self.assertEqual(result.returncode, 1)
         self.assertIn('MARKETING_VERSION', result.stderr)
-        self.assertIn(f'git checkout -- {PROJECT}', result.stderr)
+        self.assertIn(f'git checkout -- {PROJECT_DIR}\n', result.stderr)
         self.assertIn('Update to recommended settings', result.stderr)
         self.assertIn(f'--team {TEAM}', result.stderr)
         self.assertFalse(self.project_is_clean())
@@ -441,7 +498,28 @@ class CheckTests(Sandbox):
         code, out = self.run_check()
         self.assertEqual(code, 0, out)
         self.assertIn('warn  Xcode project', out)
-        self.assertIn(f'git checkout -- {PROJECT}', out)
+        self.assertIn(f'        Next: git checkout -- {PROJECT_DIR}\n', out)
+
+    def test_a_changed_scheme_alone_is_reported_even_before_a_team_is_saved(self):
+        # The install test undid only project.pbxproj and check.py then said "Ready." while
+        # the scheme was still changed, which stops "git pull" at the weekly reinstall.
+        self.configured(team=None)
+        self.xcode_stamps_upgrade(project=False)
+        code, out = self.run_check(settings_team='')
+        self.assertIn('warn  Xcode project', out)
+        self.assertIn(f'Next: git checkout -- {PROJECT_DIR}\n', out)
+        self.assertNotIn(f'git checkout -- {PROJECT}', out)
+
+    def test_every_next_line_is_one_command_or_one_sentence(self):
+        self.configured(team=None)
+        self.xcode_stamps_upgrade()
+        _, out = self.run_check(teams=personal_teams(TEAM, OTHER_TEAM), settings_team='', sdks=False)
+        steps = [line.split('Next: ', 1)[1] for line in out.splitlines() if 'Next: ' in line]
+        self.assertTrue(steps, out)
+        for step in steps:
+            with self.subTest(step=step):
+                self.assertFalse(step.startswith('Run'), step)
+                self.assertNotIn(': python3 ', step)
 
     def test_capital_letters_in_the_bundle_id_are_blocking(self):
         self.configured()
