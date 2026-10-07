@@ -11,10 +11,20 @@ download a program, a model or a credential. You run those downloads yourself, u
 the commands below.
 
 Commands run in Terminal, inside the `captura` folder (`cd ~/captura`). Each step says
-what you should see. The `capture` commands print JSON. Under it, Terminal also shows a
-`Next:` line (sometimes `Or:` too) with what to do next. When it is a command, copy it
-from there, not from the JSON: inside the JSON every quote shows as `\"`, and a command
-copied that way fails. `python3 bin/capture COMMAND --help` explains each command.
+what you should see. The `capture` commands print JSON. Under it, Terminal also shows
+plain lines with what to do next:
+
+- `Next:` (and sometimes `Or:` or `Fix:`) holds **one** command or one sentence. When it
+  is a command, copy only the rest of that one line, after `Next: `, and paste it. Copy
+  it from there, not from the JSON: inside the JSON every quote shows as `\"`, and a
+  command copied that way fails.
+- A line without a label above `Next:` explains it. Don't paste it.
+- `Warn:` lines describe something to look at. They don't stop you.
+- `Then fix:` names what else is wrong, in the order to fix it.
+
+`python3 bin/capture COMMAND --help` explains each command. If a coding agent (Claude
+Code, Codex) is helping you, ask it to follow
+[`.claude/skills/captura-setup/SKILL.md`](../.claude/skills/captura-setup/SKILL.md).
 
 ## What you need
 
@@ -23,6 +33,11 @@ copied that way fails. `python3 bin/capture COMMAND --help` explains each comman
 - [Homebrew](https://brew.sh). Install it by following the instructions on its home page.
   When the installer finishes, it prints **Next steps** with commands that add `brew` to
   your PATH. Run them, then open a new Terminal window.
+- A macOS user that is an **administrator**: the Homebrew installer asks for your Mac
+  password and needs admin rights. To check, open System Settings > Users & Groups
+  (Configuración del Sistema > Usuarios y grupos): your user should say "Admin". If it
+  doesn't, for example on a company Mac, ask IT to install Homebrew and
+  `brew install whisper.cpp ffmpeg rclone` for you, then continue at step 2.
 - Python 3.9 or later. The `python3` that comes with Xcode is enough.
 - About 2 GB of free disk space for the speech model.
 - From the Google admin: the **Desktop** client ID and client secret, created in the
@@ -67,7 +82,8 @@ curl -L --fail -o ~/.cache/whisper/ggml-silero-v6.2.0.bin https://huggingface.co
 - *If transcription is too slow or makes the Mac hot:* download the smaller
   [`ggml-large-v3-turbo-q5_0.bin`](https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo-q5_0.bin)
   (574 MB) or [`ggml-small.bin`](https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.bin)
-  (488 MB). Before step 4, pass `--model ~/.cache/whisper/THAT-FILE` to `capture init`.
+  (488 MB), in that order of preference. Smaller models such as `ggml-base.bin` work
+  but make more mistakes; doctor warns about them. Before step 4, pass `--model ~/.cache/whisper/THAT-FILE` to `capture init`.
   After step 4, switch with `python3 bin/capture set --model ~/.cache/whisper/THAT-FILE`,
   which keeps the rest of your settings and the pinned folder.
 
@@ -94,9 +110,14 @@ The secret doesn't show while you paste it, so the second line tells you how man
 characters arrived. This keeps the secret out of your shell history, and `> /dev/null`
 hides what rclone prints at the end, which includes the secret and the access token.
 
-- *You should see:* `Got` and a number above 0, then your browser open on a Google
-  sign-in page. Sign in with the **same account the phone linked** and allow access.
-  The browser then says "Success", and Terminal shows the prompt again.
+- *You should see:* `Got` and a number above 0, then a few lines from rclone and your
+  browser open on a Google sign-in page. Sign in with the **same account the phone
+  linked** and allow access. The browser then says "Success", and Terminal shows the
+  prompt again.
+- rclone's lines include `NOTICE: Make sure your Redirect URL is set to
+  "http://127.0.0.1:53682/" in your custom config`, `Please go to the following link`
+  and `Waiting for code...`. Ignore the NOTICE: a Desktop client needs no redirect URL,
+  so there is nothing to set in Google Cloud.
 - *If it says `Got 0 characters`:* the paste didn't arrive. Run the second line again
   before the third.
 - *If the browser does not open:* copy the `http://127.0.0.1:53682/...` link that rclone
@@ -131,7 +152,9 @@ the token rclone saved in `~/.config/rclone/rclone.conf` as private.
 python3 bin/capture init --account you@yourcompany.com
 ```
 
-Use the Google account the phone linked (`init` refuses the example address).
+Put the Google account you link on the phone in place of `you@yourcompany.com`. After
+linking, the phone shows it under "Cuenta" ([iPhone step 10.2](ios.md#10-first-launch)).
+`init` refuses the example address.
 
 - *You should see:* `"state": "config_written"` and the path
   `~/Library/Application Support/Captura/config.json`. Only your macOS user can read
@@ -146,6 +169,9 @@ Use the Google account the phone linked (`init` refuses the example address).
 - To change a value later, use `python3 bin/capture set` with the same options, for
   example `python3 bin/capture set --root ~/Documents/Captura`. It changes only what you
   name and keeps the pinned folder.
+- *If it says `invalid_account`:* you left the example address, or the address is
+  mistyped. Its `Next:` line is the same command with `YOUR-GOOGLE-ADDRESS`: put your
+  address there and run it.
 - *If it says `config_exists`:* you already have one, and nothing was written. If you
   passed new values, its `Next:` line is the `set` command that applies just those.
   `--force` starts over instead: it resets every value and clears the pinned folder,
@@ -157,14 +183,18 @@ Use the Google account the phone linked (`init` refuses the example address).
 python3 bin/capture doctor
 ```
 
-- *You should see:* `"state": "ready_with_warnings"`, with only the `folder_id` check as
-  `warn` ("not pinned yet"). The `Next:` line is the probe command.
+- *You should see:* `"state": "ready_with_warnings"`, and one `Warn:` line, for the
+  phone's Drive folder ("not pinned yet"). The `Next:` line is the probe command.
+- *If there are other `Warn:` lines:* read them. A warning about the rclone connection
+  (rclone's shared client, or a scope other than `drive.file` or `drive.readonly`) means
+  redoing step 3 as the line says. You can still go on and fix it later.
 - *If `"state": "blocked"`:* do what the `Next:` line says. When it is a command, copy
-  everything after `Next: `, paste it and press Return. When it is a sentence, follow
-  it (for example "Do step 3 of docs/worker.md"). Then run doctor again. If more checks
-  fail, the last line names them: fix one at a time.
-- *If the `model` check fails but you already have a smaller model:* doctor names it,
-  and the `Or:` line switches to it instead of downloading.
+  only that line after `Next: `, paste it and press Return. When it is a sentence,
+  follow it (for example "Do step 3 of docs/worker.md"). Then run doctor again. If more
+  checks fail, the `Then fix:` line names them: fix one at a time.
+- *If the speech model is missing but you already have another one:* doctor names it.
+  `Next:` downloads the missing model and `Or:` switches to the best one you already
+  have. Run one of them, not both.
 
 Doctor checks:
 
@@ -189,7 +219,7 @@ python3 bin/capture probe
 ```
 
 - *You should see:* `"state": "private_inbox_verified"` and a `folder_id`. The `Next:`
-  line is the exact `pin` command for that folder; the line under it reminds you to
+  line is the exact `pin` command for that folder; the line above it reminds you to
   compare the ID with the phone first.
 - *If `"state": "waiting_for_phone_folder"` while the phone already shows a folder ID:*
   rclone can't see the phone's files with `drive.file`. Switch to `drive.readonly`

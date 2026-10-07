@@ -12,16 +12,24 @@ What has been tested so far and what hasn't is listed in [verification](verifica
 In short, the app has passed its tests in the simulator, but nobody has yet followed this
 guide end to end on a real iPhone with Xcode 27.
 
+En español: [guía rápida](ios.es.md), con los mismos pasos. If a coding agent (Claude Code,
+Codex) is helping you, ask it to follow [`.claude/skills/captura-setup/SKILL.md`](../.claude/skills/captura-setup/SKILL.md).
+
+The Mac labels below are in English, with the Spanish ones in parentheses when they
+differ. Xcode itself is only in English. The iPhone labels are in Spanish.
+
 ## What you need
 
 - A Mac with Apple silicon (M1 or newer) running macOS 26.6 or later. To check, open
-  Apple menu > About This Mac. Xcode 27 does not run on older Macs or older macOS.
+  Apple menu > About This Mac (Acerca de esta Mac). Xcode 27 does not run on older Macs
+  or older macOS.
 - An iPhone with iOS 18 or later, and a cable that connects it to the Mac.
 - A free Apple Account (the one you use for the App Store is fine). You don't need the
   paid Apple Developer Program.
 - The **iOS client ID** from whoever manages your Google Cloud project. If that's you,
   do [Google Cloud setup (for the admin)](#google-cloud-setup-for-the-admin) first.
-  Agree on the bundle ID before you start (see step 4).
+  The admin needs your bundle ID to create it: step 4.1 checks it and tells you what to
+  send.
 - Several GB of free disk space. Xcode is a 3.1 GB download and needs much more once
   installed, plus the iOS platform.
 
@@ -34,9 +42,10 @@ IDs in any 7 days.
 
 1. Open the **App Store** on the Mac, search for **Xcode** and click **Get**, then
    **Install**. It's free.
-   - *You should see:* Xcode in your Applications folder once the download finishes.
+   - *You should see:* Xcode in your Applications (Aplicaciones) folder once the download finishes.
    - *If the App Store says it needs a newer macOS:* go to System Settings > General >
-     Software Update and update macOS first.
+     Software Update (Configuración del Sistema > General > Actualización de software)
+     and update macOS first.
 2. Open Xcode. Accept the license, and enter your Mac password if asked. When Xcode asks
    which platforms to install, tick **iOS** and continue. The download is several GB.
    - *You should see:* the "Welcome to Xcode" window.
@@ -52,9 +61,9 @@ IDs in any 7 days.
 
 ## 2. Open Terminal
 
-Open **Terminal**. It's in Applications > Utilities, or search for it with Spotlight
-(⌘ Space). Type each command below exactly as written and press Return. Lines that
-start with `#` are only notes; you don't need to type them.
+Open **Terminal**. It's in Applications > Utilities (Aplicaciones > Utilidades), or
+search for it with Spotlight (⌘ Space). Type each command below exactly as written and
+press Return. Lines that start with `#` are only notes; you don't need to type them.
 
 ## 3. Download Captura
 
@@ -69,6 +78,18 @@ ls ios/scripts
   `check.py` and `configure.py` from the last command. From now on, every command runs
   inside this `captura` folder. If you open a new Terminal window, run `cd ~/captura`
   first.
+- *If it says `destination path 'captura' already exists`:* you downloaded it before.
+  Update that copy instead, then check again:
+
+  ```sh
+  git -C ~/captura pull
+  cd ~/captura
+  ls ios/scripts
+  ```
+
+  If `git pull` refuses because of local changes in `ios/Captura.xcodeproj` (Xcode
+  makes them), run `git -C ~/captura checkout -- ios/Captura.xcodeproj`, then
+  `git -C ~/captura pull` again.
 - *If the last command says `No such file or directory`:* the version you downloaded
   doesn't include the iPhone app yet. Stop here and tell whoever sent you this guide.
   (For them: [before handing out this guide](release.md#before-handing-out-the-setup-guides).)
@@ -80,18 +101,31 @@ ls ios/scripts
 
 ## 4. Save your settings
 
-Pick a **bundle ID**. It's the app's name for Apple and Google and must be unique to
-you. Use `com.` + your name + `.captura`, in lowercase with no spaces, for example
-`com.anagarcia.captura`. Whoever creates the Google iOS client must enter **exactly**
-this value (see the admin section below). If you type capital letters, the script
-saves the ID in lowercase and tells you; give the admin the value it prints. Then run:
+1. Pick a **bundle ID**. It's the app's name for Apple and Google and must be unique to
+   you. Use `com.` + your name + `.captura`, all in lowercase, with no spaces or accents.
+   For example, Ana García would use `com.anagarcia.captura` (the script refuses this
+   example and `com.yourname.captura`: use your own name). Check it, with your name in
+   place of `yourname`:
 
-```sh
-python3 ios/scripts/configure.py --bundle-id com.yourname.captura --google-client-id PASTE-THE-IOS-CLIENT-ID
-```
+   ```sh
+   python3 ios/scripts/configure.py --bundle-id com.yourname.captura
+   ```
 
-Add `--hosted-domain yourcompany.com` if your Google accounts belong to a Google
-Workspace. The app will then only accept accounts from that domain.
+   - *You should see:* `Bundle ID ... looks right. Nothing was written.` and
+     `Send the Google admin exactly this value: ...`. Send the admin that value. The admin
+     creates the iOS client with it and sends you its **client ID**.
+   - *If it says `Not changed: ...`:* the message says what's wrong (capital letters, an
+     example value, accents or spaces). Fix it and run the command again.
+2. When you have the iOS client ID, save your settings. Use the same bundle ID and put
+   the client ID in place of `PASTE-THE-IOS-CLIENT-ID`:
+
+   ```sh
+   python3 ios/scripts/configure.py --bundle-id com.yourname.captura --google-client-id PASTE-THE-IOS-CLIENT-ID
+   ```
+
+   If your Google accounts belong to a Google Workspace, add `--hosted-domain` and your
+   domain (the part after @ in your work address) at the end. The app will then only
+   accept accounts from that domain.
 
 - *You should see:* `Wrote ios/Config/Captura.local.xcconfig`, a summary of your values,
   and `Using the team Xcode knows: ABCDE12345 (Your Name (Personal Team))`.
@@ -101,8 +135,9 @@ Workspace. The app will then only accept accounts from that domain.
   sets it.
 - *If it says `Xcode knows several teams`:* pick the one you want (usually the one marked
   Personal Team) and run `python3 ios/scripts/configure.py --team THAT-TEAM-ID`.
-- *If it says `Not changed: ...`:* the message names the value that's wrong and gives
-  an example. Fix it and run the command again.
+- *If it says `Not changed: ...`:* the message names the value that's wrong and why. If
+  it calls a value an example or a placeholder, you left a value from this guide in the
+  command: put your own there. Fix it and run the command again.
 - *If it says `Already configured: ...`:* you ran this step before. To replace your
   settings, run the same command again with `--force` at the end. The Apple team you
   saved before is kept (add `--team` only to change it).
@@ -133,11 +168,12 @@ connected by cable.
 open ios/Captura.xcodeproj
 ```
 
-If Xcode offers **Update to recommended settings** (as a dialog, or as a yellow warning
-in the list of issues), don't accept it: close it or leave the warning there. The
-project already has the settings it needs, and accepting changes a shared project file,
-which later stops `git pull`. If you accepted it by mistake, `check.py` shows the command
-that undoes it.
+If Xcode offers to update the project, for example **Update to recommended settings**
+(as a dialog, or as a yellow warning in the list of issues), don't apply it: click
+**Not Now** or **Cancel**, or just leave the warning there. Never click **Perform
+Changes**. The project already has the settings it needs, and applying them changes
+shared project files, which later stops `git pull`. If you applied it by mistake, quit
+Xcode and run `git checkout -- ios/Captura.xcodeproj`; `check.py` shows the same command.
 
 1. In the left sidebar, click the blue **Captura** project icon at the top. Then, under
    Targets, click **Captura** and open the **Signing & Capabilities** tab.
@@ -189,7 +225,7 @@ that undoes it.
 In Xcode, press the **Run** button (▶) or ⌘R. The first build takes a few minutes.
 
 - *If macOS asks whether `codesign` may use a key in your keychain:* enter your Mac login
-  password and click **Always Allow**.
+  password and click **Always Allow** (Permitir siempre).
 - *You should see:* "Build Succeeded", and Captura appears on the iPhone. The first
   time, iOS won't open it and Xcode reports that the developer isn't trusted. Step 9
   fixes this.
@@ -201,7 +237,7 @@ General > VPN & Device Management). Under the developer apps section, tap your A
 Account. Tap **Confiar en "…"** (Trust), then confirm.
 
 - *You should see:* the app listed as trusted. Press Run in Xcode again, or tap the
-  Captura icon on the Home Screen.
+  Captura icon on the iPhone's Home Screen (pantalla de inicio).
 
 ## 10. First launch
 
@@ -249,8 +285,8 @@ recordings and your Google link stay on the iPhone. To renew:
    cuts off a recording in progress. The cut piece is kept as "Incompleto · conservado",
    but it isn't uploaded automatically.
 2. Connect the iPhone, run `open ~/captura/ios/Captura.xcodeproj`, choose the iPhone and
-   press **Run**. (To get the latest version first, run `git pull` in the `captura`
-   folder.)
+   press **Run**. (To get the latest version first, run `git -C ~/captura pull`. If it
+   refuses because of local changes, see [troubleshooting](#troubleshooting).)
 3. Open Captura. Your recordings, upload queue and Google account are all still there.
 
 **Never delete the Captura app while recordings are waiting to upload** (the "pendientes"
@@ -278,7 +314,9 @@ open the app. Do step 2 and everything comes back.
 | "Esa cuenta no es de yourcompany.com…" | `--hosted-domain` only allows that domain. | Choose an account from that domain, or redo step 4 without `--hosted-domain`. |
 | Xcode: "Failed Registering Bundle Identifier" / "is not available" | Someone else registered that bundle ID. | See step 6.3. |
 | Xcode: "Signing for "Captura" requires a development team" | No team is set. | See step 6.2. |
-| Xcode: "Update to recommended settings" | A newer Xcode offers to change the project file. | Don't accept it (step 6). If you did, quit Xcode and run the `git checkout -- ...` command that `check.py` shows. |
+| Xcode: "Update to recommended settings" | A newer Xcode offers to change the project files. | Click **Not Now** or **Cancel** (step 6). If you applied it, quit Xcode and run `git checkout -- ios/Captura.xcodeproj`. |
+| `git pull`: "Your local changes to the following files would be overwritten" | Xcode changed a shared project file (the team or recommended settings). | Quit Xcode and run `python3 ios/scripts/check.py`. Run the command on its `Xcode project` or `Apple team` line, then `git pull` again. If the files are in `ios/Captura.xcodeproj`, `git checkout -- ios/Captura.xcodeproj` undoes them. |
+| `git clone`: "destination path 'captura' already exists" | You downloaded Captura before. | Step 3: `git -C ~/captura pull`. |
 | Xcode says the App ID limit was reached | A free account can register only 10 App IDs in 7 days. | Keep one bundle ID and wait for the limit to reset. Don't keep changing bundle IDs. |
 | Xcode says the maximum number of apps for free development profiles was reached | Only 3 apps installed from Xcode fit on one iPhone. | Remove another app you installed from Xcode. Never remove Captura while it has recordings waiting. Then press Run again. |
 | iPhone: "Desarrollador no confiable" (Untrusted Developer) | You haven't trusted your developer account yet. | Step 9. |
@@ -315,9 +353,9 @@ a **Desktop** client for rclone on the Mac. Both clients must be in the **same p
      people then tap "Volver a vincular Google Drive" on the iPhone and run
      `rclone config reconnect captura:` on the Mac.
 4. Create the **iOS** client: Clients > Create client > Application type **iOS**. Enter
-   the person's bundle ID **exactly**, in lowercase, as `configure.py` printed it (for
-   example `com.anagarcia.captura`). Leave the
-   App Store ID and Team ID empty. Keep App Check off, because free Apple accounts can't
+   the person's bundle ID **exactly** as they sent it: `configure.py` printed it after
+   "Send the Google admin exactly this value" (all lowercase, for example
+   `com.anagarcia.captura`). Leave the App Store ID and Team ID empty. Keep App Check off, because free Apple accounts can't
    use it. Click Create and send the person the **Client ID** (it ends in
    `.apps.googleusercontent.com`). An iOS client has no secret. Create one iOS client
    per bundle ID.

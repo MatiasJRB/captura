@@ -22,18 +22,25 @@ SaaS, pricing, store listing, newsletter or commercial launch is required.
 branch. Someone who follows them gets only what that branch has.
 
 - [ ] The branch with the iOS app and these guides is merged into the default branch and
-      pushed. Check it offline after `git fetch origin`:
-      `python3 scripts/check_public_tree.py --default-branch`. It fails, naming each
-      missing file, while `origin/HEAD` lacks `docs/ios.md`, `docs/worker.md`,
-      `ios/scripts/configure.py`, `ios/scripts/check.py` or `bin/capture`.
+      pushed. The guides clone the default branch with no branch option, and must keep
+      doing so. Check it offline after `git fetch origin`, in a clone of the URL the
+      guides clone: `python3 scripts/check_public_tree.py --default-branch`. It fails,
+      naming each missing file, while `origin/HEAD` lacks `docs/ios.md`, `docs/worker.md`,
+      `ios/scripts/configure.py`, `ios/scripts/check.py` or `bin/capture`, and it refuses
+      to check when `origin` is another URL (for example a test clone of a local copy).
+      If the default branch changed on GitHub, run `git remote set-head origin --auto`
+      first.
 - [ ] One real pass of both guides, recorded in [verification](verification.md): Xcode 27
       on macOS 26.6 or later, a physical iPhone with a free Personal Team (Run, Developer
       Mode, trusting the developer), Google sign-in with a real iOS client, and the worker
       against a real `drive.file` remote (doctor's remote checks and
       `ready_with_warnings`, then `probe`, which decides `drive.file` versus
       `drive.readonly`).
-- [ ] Open the project once with the Xcode version the guide names. If it offers
-      "Update to recommended settings", decide on a branch: accept it, run the tests and
-      commit the project file, so people following the guide are not offered it.
+- [ ] Open the project once with the Xcode version the guide names. The project's
+      upgrade stamps already say Xcode 27 (`LastUpgradeCheck` 2700 in `project.pbxproj`,
+      `LastUpgradeVersion` 2700 in the shared scheme). If it still offers "Update to
+      recommended settings", decide on a branch: apply it, run the tests and commit the
+      project files, so people following the guide are not offered it. The guide tells
+      them to click Not Now meanwhile.
 - [ ] The admin knows to send the Desktop client ID and secret through a password
       manager item ([admin step 5](ios.md#google-cloud-setup-for-the-admin)).
