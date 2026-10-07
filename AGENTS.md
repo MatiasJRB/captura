@@ -22,7 +22,17 @@ Keep this repository a small capture/sync/transcription bridge, not an agent fra
 - Setup helpers (`ios/scripts/*.py`, `bin/capture init/set/doctor/pin`) never use the
   network, download, or print tokens/secrets; tests fake external tools via PATH.
   A `next_step` is one pasteable command or prose without a command, never both, and
-  never puts a secret on the command line.
+  never puts a secret on the command line. In plain text, each `Next:`/`Or:`/`Fix:` line
+  holds one of them; explanations go on their own line.
 - User-facing setup docs: numbered steps, each with what you should see and what to do
   if not (`docs/ios.md`, `docs/worker.md`). iOS UI strings are Spanish; repo text English.
+  `docs/ios.es.md` is a Spanish summary with the same step numbers: keep it in step.
 - Check staged files/full history before public publication. No automatic publish steps.
+
+## Helping someone set up Captura
+
+Follow [`.claude/skills/captura-setup/SKILL.md`](.claude/skills/captura-setup/SKILL.md),
+the one setup procedure for any agent (Claude Code loads it as a skill). It starts from
+`python3 ios/scripts/check.py` and `python3 bin/capture doctor`, drives `docs/ios.md` and
+`docs/worker.md`, and keeps secrets out of the chat: the person types them only into
+their own Terminal, browser, Xcode or iPhone.
