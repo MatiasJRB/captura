@@ -57,6 +57,8 @@ for name in sorted(set(paths)-{''}):
     if path.suffix=='.jar':
         if name!='android/gradle/wrapper/gradle-wrapper.jar':errors.append(name+': unreviewed binary')
         continue
+    # Reviewed binaries: the App Store icon (1024x1024 PNG drawn from assets/brand/app-icon.svg).
+    if name=='ios/Captura/Assets.xcassets/AppIcon.appiconset/AppIcon-1024.png':continue
     try:text=path.read_text()
     except UnicodeDecodeError:errors.append(name+': unreviewed binary');continue
     # Detect literal private configuration, not these regex descriptions themselves.
