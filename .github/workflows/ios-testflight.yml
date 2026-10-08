@@ -1,7 +1,14 @@
 name: iOS TestFlight
 
 # Archives the iPhone app on a GitHub macOS runner and uploads it to TestFlight,
-# so testers install from the TestFlight app with no Xcode and no cable.
+# so a tester installs from the TestFlight app with no Mac, Xcode or cable.
+#
+# Nothing here is specific to one organization and nothing signing-related is stored
+# in the repository: the Apple team, the App Store Connect API key and the Google
+# client belong to whoever runs the fork, as repository secrets. A repository that
+# has not set them stops at the first job and explains what is missing, so a fork of
+# a public repository never fails red for a setup it was never meant to have.
+#
 # Setup and the list of secrets: docs/testflight.md.
 
 on:
@@ -15,7 +22,45 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  preflight:
+    runs-on: ubuntu-latest
+    outputs:
+      ready: ${{ steps.check.outputs.ready }}
+    steps:
+      - id: check
+        env:
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+          CAPTURA_BUNDLE_ID: ${{ secrets.CAPTURA_BUNDLE_ID }}
+          CAPTURA_GOOGLE_IOS_CLIENT_ID: ${{ secrets.CAPTURA_GOOGLE_IOS_CLIENT_ID }}
+        run: |
+          missing=""
+          for name in APPLE_TEAM_ID ASC_KEY_ID ASC_ISSUER_ID ASC_KEY_P8 \
+                      CAPTURA_BUNDLE_ID CAPTURA_GOOGLE_IOS_CLIENT_ID; do
+            eval "value=\${$name}"
+            [ -n "$value" ] || missing="$missing $name"
+          done
+          if [ -n "$missing" ]; then
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            {
+              echo "## TestFlight is not configured in this repository"
+              echo
+              echo "No build was attempted. These repository secrets are empty or unset:"
+              echo
+              for name in $missing; do echo "- \`$name\`"; done
+              echo
+              echo "See [docs/testflight.md](../blob/HEAD/docs/testflight.md)."
+            } >> "$GITHUB_STEP_SUMMARY"
+            echo "Not configured:$missing. Nothing to build."
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+
   testflight:
+    needs: preflight
+    if: needs.preflight.outputs.ready == 'true'
     runs-on: xcode-27
     timeout-minutes: 45
 

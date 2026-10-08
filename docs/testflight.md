@@ -7,6 +7,11 @@ from the **TestFlight** app. A tester needs no Mac, no Xcode and no cable.
 It costs one paid Apple Developer Program membership (the account that owns the build) and
 a first setup of about an hour. After that every build is one click in Actions.
 
+Nothing signing-related lives in the repository: the Apple team, the App Store Connect API
+key and the Google client are repository secrets of whoever runs the fork. A clone that has
+not set them stops at the first job and says which ones are missing, instead of failing on a
+build it was never meant to run.
+
 What it does not change: the bundle ID still has to match a Google "iOS" OAuth client, and
 the [worker](worker.md) on a Mac is still what transcribes.
 
@@ -52,7 +57,11 @@ Actions > **iOS TestFlight** > Run workflow. Pushing a tag that starts with `ios
 same. The run takes about 10 minutes and ends with the build in TestFlight.
 
 - The workflow signs with `-allowProvisioningUpdates` and the API key, so Apple issues and
-  renews the distribution certificate and the provisioning profile. No `.p12` is stored.
+  renews the distribution certificate and the provisioning profile itself. There is no
+  certificate secret and no `.p12` to export, rotate or leak: the private key stays with
+  Apple and the API key of step 3 is the only credential the runner ever holds.
+- A run first checks that every secret above is set. If one is missing it writes the list to
+  the run summary and stops; the build job never starts.
 - `CURRENT_PROJECT_VERSION` is the Actions run number, so every upload has a new build
   number. `MARKETING_VERSION` stays what `project.pbxproj` says.
 - `testFlightInternalTestingOnly` is set: the build goes to internal testers only and is
