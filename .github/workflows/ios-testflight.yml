@@ -1,0 +1,109 @@
+name: iOS TestFlight
+
+# Archives the iPhone app on a GitHub macOS runner and uploads it to TestFlight,
+# so testers install from the TestFlight app with no Xcode and no cable.
+# Setup and the list of secrets: docs/testflight.md.
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "ios-v*"
+
+concurrency:
+  group: ios-testflight
+  cancel-in-progress: false
+
+jobs:
+  testflight:
+    runs-on: xcode-27
+    timeout-minutes: 45
+
+    env:
+      ARCHIVE_PATH: ${{ runner.temp }}/Captura.xcarchive
+      EXPORT_PATH: ${{ runner.temp }}/export
+      EXPORT_OPTIONS: ${{ runner.temp }}/ExportOptions.plist
+      ASC_KEY_PATH: ${{ runner.temp }}/AuthKey.p8
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Select Xcode 27
+        run: |
+          sudo xcode-select -s /Applications/Xcode_27.app
+          xcodebuild -version
+
+      - name: Write the build configuration
+        env:
+          BUNDLE_ID: ${{ secrets.CAPTURA_BUNDLE_ID }}
+          GOOGLE_IOS_CLIENT_ID: ${{ secrets.CAPTURA_GOOGLE_IOS_CLIENT_ID }}
+          HOSTED_DOMAIN: ${{ vars.CAPTURA_GOOGLE_HOSTED_DOMAIN }}
+          TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          python3 ios/scripts/configure.py \
+            --bundle-id "$BUNDLE_ID" \
+            --google-client-id "$GOOGLE_IOS_CLIENT_ID" \
+            --team "$TEAM_ID" \
+            ${HOSTED_DOMAIN:+--hosted-domain "$HOSTED_DOMAIN"} \
+            --force
+
+      - name: Install the App Store Connect API key
+        env:
+          ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+        run: |
+          printf '%s\n' "$ASC_KEY_P8" > "$ASC_KEY_PATH"
+          chmod 600 "$ASC_KEY_PATH"
+
+      - name: Archive
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+        run: |
+          xcodebuild archive \
+            -project ios/Captura.xcodeproj \
+            -scheme Captura \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -archivePath "$ARCHIVE_PATH" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$ASC_KEY_PATH" \
+            -authenticationKeyID "$ASC_KEY_ID" \
+            -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
+            CURRENT_PROJECT_VERSION=${{ github.run_number }}
+
+      - name: Write the export options
+        env:
+          TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          cat > "$EXPORT_OPTIONS" <<PLIST
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>method</key><string>app-store-connect</string>
+            <key>destination</key><string>upload</string>
+            <key>teamID</key><string>${TEAM_ID}</string>
+            <key>signingStyle</key><string>automatic</string>
+            <key>uploadSymbols</key><true/>
+            <key>testFlightInternalTestingOnly</key><true/>
+          </dict>
+          </plist>
+          PLIST
+
+      - name: Export and upload to TestFlight
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+        run: |
+          xcodebuild -exportArchive \
+            -archivePath "$ARCHIVE_PATH" \
+            -exportOptionsPlist "$EXPORT_OPTIONS" \
+            -exportPath "$EXPORT_PATH" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$ASC_KEY_PATH" \
+            -authenticationKeyID "$ASC_KEY_ID" \
+            -authenticationKeyIssuerID "$ASC_ISSUER_ID"
+
+      - name: Remove the API key
+        if: always()
+        run: rm -f "$ASC_KEY_PATH"

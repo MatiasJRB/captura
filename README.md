@@ -49,6 +49,8 @@ that folder is sensitive and must never be published casually.
 - [iPhone](docs/ios.md): Apple-silicon Mac, Xcode 27 and a free Apple Account; numbered
   steps from installing Xcode to the first upload, plus the Google Cloud setup.
   [Guía rápida en español](docs/ios.es.md).
+- [TestFlight](docs/testflight.md): a GitHub macOS runner builds and uploads; testers
+  install from the TestFlight app with no Mac, Xcode or cable. Needs a paid Apple account.
 - [Worker](docs/worker.md): macOS, Homebrew whisper.cpp/ffmpeg/rclone, models, then
   `capture drive-setup` → `init` → `doctor` → `probe` → `pin` → `run` (`set` changes a value later).
 - Setup values can come from a password manager (`--from op://…`, `keychain://…`) instead of
