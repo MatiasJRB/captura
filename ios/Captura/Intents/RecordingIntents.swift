@@ -25,7 +25,7 @@ struct StartRecordingIntent: AppIntent {
 /// consent, and the closed chunk is queued like after tapping Detener.
 struct StopRecordingIntent: AppIntent {
     static let title: LocalizedStringResource = "Detener Captura"
-    static let description = IntentDescription("Detiene la grabación de Captura y guarda el audio en el iPhone.")
+    static let description = IntentDescription("Detiene la grabación de Captura y guarda el audio, sin abrir la app.")
     static let openAppWhenRun = false
 
     @MainActor
