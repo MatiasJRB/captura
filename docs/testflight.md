@@ -21,8 +21,8 @@ Everything here is the Apple and GitHub web interface. Xcode is not needed.
 
 1. **Register the bundle ID.** developer.apple.com > Certificates, Identifiers & Profiles >
    Identifiers > **+** > App IDs > App. Use the same bundle ID every tester's build will
-   have, for example `com.yourorg.captura`, and enable **Background Modes** is not needed:
-   the audio and processing modes in `ios/Support/Info.plist` need no entitlement.
+   have, for example `com.yourorg.captura`. No capability needs to be enabled: the audio
+   and processing background modes in `ios/Support/Info.plist` need no entitlement.
    - Note your **Team ID** (top right of the developer site, 10 characters).
 2. **Create the app record.** App Store Connect > Apps > **+** > New App, platform iOS, the
    bundle ID from step 1. The name there must be unique across App Store Connect; it is not
@@ -54,7 +54,7 @@ Everything here is the Apple and GitHub web interface. Xcode is not needed.
 ## Each build
 
 Actions > **iOS TestFlight** > Run workflow. Pushing a tag that starts with `ios-v` does the
-same. The run takes about 10 minutes and ends with the build in TestFlight.
+same. The run takes about 4 to 10 minutes and ends with the build in TestFlight.
 
 - The workflow signs with `-allowProvisioningUpdates` and the API key, so Apple issues and
   renews the distribution certificate and the provisioning profile itself. There is no
