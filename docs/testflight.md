@@ -85,3 +85,9 @@ same. The run takes about 10 minutes and ends with the build in TestFlight.
 | `Invalid Application` / `app record not found` | no app record for the bundle ID | step 2 |
 | `The provided entity includes an attribute with a value that has already been used` | the build number repeated | re-run; the run number always grows |
 | `Not changed:` from `configure.py` | a secret still holds an example value | fix the secret named in the message |
+
+A run can end green and the build still fail later, while App Store Connect processes it:
+TestFlight > Build uploads shows the status and the reason. `90626: Invalid Siri Support`
+means an `IntentDescription` in `ios/Captura/Intents` names a device ("iPhone" and the like
+are not allowed in Siri-facing text). The build number is burned either way; the next run
+uses the next one.
