@@ -6,6 +6,10 @@ CAPTURA_GOOGLE_IOS_CLIENT_ID =
 CAPTURA_GOOGLE_REVERSED_CLIENT_ID = org.example.captura.oauth
 CAPTURA_GOOGLE_HOSTED_DOMAIN =
 
+// The app icon in ios/Captura/Assets.xcassets. App Store Connect rejects an upload
+// without it, so TestFlight needs it even though a cabled Xcode install does not.
+ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon
+
 // The bundle ID and team as compilation conditions (CAPTURA_TEAM_ alone means no team).
 // ios/Captura/App/SetupCheck.swift uses them to stop a signed iPhone build that still has
 // the placeholder bundle ID, with a message that points to configure.py.
