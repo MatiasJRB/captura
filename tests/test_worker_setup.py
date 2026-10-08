@@ -612,11 +612,85 @@ class PinAndHintTests(unittest.TestCase):
             self.assertTrue(failure['next_step'].endswith(' run'), failure)
 
 
+class PublishSetupTests(unittest.TestCase):
+    """Opt-in publishing: set, doctor and the offline dry run. No network."""
+
+    def ready_env(self, tmp, scope='drive.file'):
+        env = SetupHome(tmp)
+        env.cli('init', '--account', 'person@fictional.test')
+        env.models()
+        env.remote(rclone_section(scope=scope))
+        return env
+
+    def test_off_by_default_and_set_turns_it_on(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            env = self.ready_env(tmp)
+            self.assertNotIn('publish', json.loads(env.config.read_text()))
+            check = by_check(env.doctor()[1])['publish']
+            self.assertEqual(check['status'], 'ok')
+            self.assertTrue(check['detail'].startswith('off'))
+            result = json.loads(env.cli('set', '--publish', 'on').stdout)
+            self.assertEqual(result['changed'], dict(publish=dict(old=None, new=True)))
+            self.assertIn(' publish --config ', result['next_step'])
+            self.assertTrue(result['next_step'].endswith(' --dry-run'), result)
+            self.assertIs(json.loads(env.config.read_text())['publish'], True)
+            check = by_check(env.doctor()[1])['publish']
+            self.assertEqual(check['status'], 'ok')
+            self.assertIn('not created yet', check['detail'])
+            inbox = Path(json.loads(env.config.read_text())['root'].replace('~', str(env.home), 1))
+            inbox.mkdir(parents=True)
+            (inbox / 'published.json').write_text(json.dumps(dict(schema_version=1, folder_id=FOLDER,
+                                                                  account='person@fictional.test', records={})))
+            self.assertIn(f'known ({FOLDER})', by_check(env.doctor()[1])['publish']['detail'])
+            env.cli('set', '--publish', 'off')
+            self.assertIs(json.loads(env.config.read_text())['publish'], False)
+
+    def test_doctor_warns_when_remote_is_read_only(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            env = self.ready_env(tmp, scope='drive.readonly')
+            env.cli('set', '--publish', 'on')
+            result, report = env.doctor()
+            check = by_check(report)['publish']
+            self.assertEqual(check['status'], 'warn')
+            self.assertIn('drive-setup', check['next_step'])
+            self.assertNotIn(SECRET, result.stdout + result.stderr)
+            self.assertNotIn(TOKEN, result.stdout + result.stderr)
+
+    def test_dry_run_lists_without_network_or_token(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            env = self.ready_env(tmp)
+            root = Path(tmp) / 'inbox'
+            item = root / 'record_1'
+            item.mkdir(parents=True)
+            record = json.loads((ROOT / 'examples/demo/demo_idea/record.json').read_text())
+            record.update(id='record_1', original=dict(path='original.m4a', sha256='0' * 64))
+            (item / 'record.json').write_text(json.dumps(record))
+            env.cli('set', '--root', str(root))
+            # No rclone remote at all: a dry run must not need it.
+            env.rclone_conf.unlink()
+            result = env.cli('publish', '--dry-run')
+            self.assertEqual(result.returncode, 0, result.stderr)
+            report = json.loads(result.stdout)
+            self.assertEqual(report['state'], 'dry_run')
+            self.assertEqual([x['id'] for x in report['would_publish']], ['record_1'])
+            self.assertIn(' publish --config ', report['next_step'])
+            self.assertNotIn('--dry-run', report['next_step'])
+            self.assertFalse((root / 'published.json').exists())
+
+    def test_publish_without_config_points_to_step_4(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            env = SetupHome(tmp)
+            result = env.cli('publish')
+            self.assertEqual(result.returncode, 1)
+            self.assertEqual(json.loads(result.stderr)['next_step'], onboarding.STEP_4)
+
+
 class HelpTests(unittest.TestCase):
     def test_every_command_has_help(self):
         result = subprocess.run([sys.executable, CLI, '--help'], capture_output=True, text=True)
         self.assertEqual(result.returncode, 0)
-        for name in ('drive-setup', 'init', 'set', 'doctor', 'probe', 'pin', 'run', 'list', 'read', 'view'):
+        for name in ('drive-setup', 'init', 'set', 'doctor', 'probe', 'pin', 'run', 'publish', 'list', 'read',
+                     'view'):
             with self.subTest(command=name):
                 self.assertRegex(result.stdout, rf'\n\s+{name}\s+\S')
                 sub = subprocess.run([sys.executable, CLI, name, '--help'], capture_output=True, text=True)

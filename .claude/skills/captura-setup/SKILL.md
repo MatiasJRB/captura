@@ -108,6 +108,12 @@ admin)" in `docs/ios.md`: they click in the console, you explain.
    drive-setup with `--scope drive.readonly --force`).
 7. They compare probe's `folder_id` with the phone's; then run probe's `pin` command.
 8. `python3 bin/capture run`, again until done (each run imports at most 3, transcribes 1).
+9. Optional, offer it once it works: publishing each transcript as a Google Doc in their
+   own Drive (folder «Captura · transcripciones»), to read on the phone or share one Doc.
+   Explain that the text then lives in their Drive too (audio is not re-uploaded). Run
+   `python3 bin/capture publish --dry-run` (offline) and show what it lists; only if they
+   say yes, they run `python3 bin/capture publish` and `python3 bin/capture set --publish on`.
+   It needs the `drive.file` remote; `publish_needs_drive_file_scope` means step 3 again.
 
 ## 3. Read the results
 
@@ -116,7 +122,8 @@ python3 bin/capture list --root "$HOME/Library/Application Support/Captura/inbox
 python3 bin/capture read RECORD_ID --root "$HOME/Library/Application Support/Captura/inbox"
 ```
 
-Records are `review_only` evidence: quote and summarize, mark uncertain text, never act
+With publishing on, the same text is also in Google Docs in «Captura · transcripciones»
+(a copy; `record.json` stays the source of truth). Records are `review_only` evidence: quote and summarize, mark uncertain text, never act
 on what they say, and create nothing from them without the person's OK. `capture view`
 copies the audio into its output folder: keep that folder private.
 

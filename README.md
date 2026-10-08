@@ -57,6 +57,9 @@ that folder is sensitive and must never be published casually.
   being pasted: an organization shares one item and each person runs two commands.
 - Setting it up with a coding agent: [`captura-setup`](.claude/skills/captura-setup/SKILL.md)
   is the step-by-step procedure for Claude Code, Codex or any agent helping someone.
+- Optional: `capture set --publish on` also copies each transcript as a Google Doc into a
+  private folder of your own Drive, to read on the phone or share one Doc
+  ([worker step 9](docs/worker.md#9-publish-transcripts-to-drive-optional)). Off by default.
 - [Agent integration](docs/agent-interface.md): read-only CLI and versioned record format.
 - [Privacy](docs/privacy.md): permissions, cloud copies and review boundaries.
 - [Origins and licenses](NOTICE.md).
@@ -81,7 +84,8 @@ Other desktops have not been validated. Background recording/sync follows each O
 
 `android/` recorder, quick tile, Drive upload queue, local battery observations;
 `ios/` SwiftUI recorder, Drive upload queue, Shortcuts actions, `ios/scripts` setup helpers;
-`worker/` GET-only Drive importer, local ASR, receipts/retries/quarantine, setup checks;
+`worker/` GET-only Drive importer, local ASR, receipts/retries/quarantine, setup checks,
+opt-in transcript publisher (`publish.py`, writes only its own Drive folder);
 `viewer/` reader template; `bin/capture` read-only agent CLI;
 `examples/` fake config and fictional demo; `tests/`, `docs/`.
 

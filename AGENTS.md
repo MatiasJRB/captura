@@ -9,6 +9,11 @@ Keep this repository a small capture/sync/transcription bridge, not an agent fra
 - Use fictional fixtures and temporary test directories. No tests against a live account.
 - Python stdlib only; use argument lists, never shell evaluation of captured text.
 - Keep the viewer offline; escape all record text; no remote resources or analytics.
+- The importer (`worker/worker.py`) stays GET-only with its private-folder checks. Writing
+  to Drive lives only in `worker/publish.py`: opt-in (`"publish": true` or `capture
+  publish`), its own allowlist (googleapis.com; about, list/get, create its folder,
+  multipart create of a Doc), limited to its own unshared folder. It never updates,
+  shares or deletes Drive files and never uploads audio.
 - Verify `python3 -m unittest discover -s worker -v` and `... -s tests -v`
   (Python 3.9+, stdlib only) and `python3 scripts/check_public_tree.py`.
 - Android: `ANDROID_HOME=... ./android/build.sh`; never install onto an active recorder.

@@ -13,6 +13,7 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'worker'))
 import drive_setup
 import onboarding
+import publish
 import reader
 import worker
 
@@ -23,7 +24,8 @@ def parser():
     top = argparse.ArgumentParser(
         prog='python3 bin/capture',
         description='Captura: local voice evidence for humans and external agents. Setup: '
-                    'drive-setup, init, doctor, probe, pin, run (docs/worker.md). Reading: list, read, view.')
+                    'drive-setup, init, doctor, probe, pin, run (docs/worker.md). Reading: list, read, view. '
+                    'Optional: publish copies transcripts to Google Docs in your Drive.')
     commands = top.add_subparsers(dest='command', required=True, metavar='COMMAND')
 
     def add(name, summary):
@@ -39,6 +41,10 @@ def parser():
         cmd.add_argument('--model', help='Whisper GGML model file' + default(onboarding.DEFAULT_MODEL))
         cmd.add_argument('--root', help='folder for verified audio and transcripts' + default(DEFAULT_INBOX))
         cmd.add_argument('--language', help='spoken language code, e.g. es or en, or auto' + default('es'))
+        if not defaults:
+            cmd.add_argument('--publish', choices=('on', 'off'),
+                             help='after each run, copy new transcripts as Google Docs into your Drive '
+                                  '(default: off)')
         cmd.add_argument('--remote', help='rclone remote name' + default(onboarding.DEFAULT_REMOTE))
 
     cmd = add('drive-setup', 'write the rclone remote for Google Drive from a password manager item or a '
@@ -89,8 +95,16 @@ def parser():
     cmd.add_argument('--folder-id', required=True,
                      help='folder ID shown by the phone ("Copiar ID de carpeta") and by probe, '
                           'or a drive.google.com/drive/folders/ link')
-    cmd = add('run', 'download new recordings from the pinned folder and transcribe them (network)')
+    cmd = add('run', 'download new recordings from the pinned folder and transcribe them (network); '
+                     'with "publish": true, then publish them')
     config_option(cmd)
+    cmd = add('publish', 'copy finished transcripts as Google Docs into your private Drive folder '
+                         '"Captura · transcripciones" (network, opt-in; audio is never uploaded again)')
+    config_option(cmd)
+    cmd.add_argument('--dry-run', action='store_true',
+                     help='list what would be published, from this Mac only; nothing is sent')
+    cmd.add_argument('--include-empty', action='store_true',
+                     help='also publish records where no speech was detected')
 
     for name, summary in (('list', 'list finished records in an inbox (read-only)'),
                           ('read', 'print one record (read-only)'),
@@ -128,7 +142,8 @@ def main():
                                             args.force, root=args.root, language=args.language)
         elif args.command == 'set':
             result = onboarding.update_config(args.config, prog, account=args.account, remote=args.remote,
-                                              model=args.model, root=args.root, language=args.language)
+                                              model=args.model, root=args.root, language=args.language,
+                                              publish=None if args.publish is None else args.publish == 'on')
         elif args.command == 'doctor': result = onboarding.doctor(args.config, prog)
         elif args.command == 'drive-setup':
             result = drive_setup.drive_setup(prog, args.config, source=args.source, client_id_ref=args.client_id_ref,
@@ -137,6 +152,10 @@ def main():
                                              rclone_config=args.rclone_config, force=args.force,
                                              login=not args.no_login)
         elif args.command == 'pin': result = onboarding.pin_folder(args.config, args.folder_id, prog)
+        elif args.command == 'publish':
+            config = worker.load_config(args.config)
+            result = publish.publish(config, dry_run=args.dry_run, include_empty=args.include_empty)
+            result = dict(result, **publish.advice(result, config_path, config, prog))
         else:
             config = worker.load_config(args.config)
             result = worker.run(config, probe=args.command == 'probe')
@@ -145,13 +164,22 @@ def main():
                 result = {k: v for k, v in result.items() if k not in ('downloaded', 'transcribed', 'quarantined')}
             # Advice for the person or agent reading the output; the worker status is unchanged.
             result = dict(result, **onboarding.hint(result, config_path, config, prog))
+            published = None if args.command == 'probe' else publish.after_run(config, result)
+            if published is not None:
+                result['publish'] = published
+                tip = publish.advice(published, config_path, config, prog)
+                if published['errors'] and 'next_step' not in result:
+                    result['note'] = 'Publishing to Google Drive did not finish: ' + ', '.join(
+                        e['error'] for e in published['errors'][:3]) + '.'
+                    if 'next_step' in tip:
+                        result['next_step'] = tip['next_step']
         print(json.dumps(result, ensure_ascii=False, indent=2))
         advise(result)
         return 1 if isinstance(result, dict) and result.get('state') in ('error', 'blocked') else 0
     except Exception as error:
         code = str(error) if isinstance(error, worker.SafeError) else 'capture_failed'
         failure = dict(error=code)
-        if args.command in ('probe', 'run') and not config_path.is_file():
+        if args.command in ('probe', 'run', 'publish') and not config_path.is_file():
             failure['next_step'] = onboarding.STEP_4
             failure['note'] = f'No worker config at {onboarding.shell_path(config_path)}.'
         elif args.command in ('list', 'view') and code == 'inbox_not_found':

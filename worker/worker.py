@@ -78,38 +78,49 @@ def validate_bytes(path, meta):
         raise SafeError('download_checksum_mismatch')
     return sha.hexdigest()
 
+def quota_project(config):
+    """The optional quota project, validated; None when not configured."""
+    value = config.get('quota_project')
+    if value and not re.fullmatch(r'[a-z][a-z0-9-]{4,61}[a-z0-9]', value):
+        raise SafeError('invalid_quota_project')
+    return value
+
+def drive_token(config, project=None):
+    """The access token rclone already holds for the remote; never printed or logged.
+
+    Shared by the read-only importer and the opt-in publisher (worker/publish.py)."""
+    # Reuse a still-valid SDK/CLI-managed token; don't spend Drive calls refreshing each run.
+    def cached():
+        parser = configparser.RawConfigParser()
+        parser.read(config['rclone_config'])
+        if parser[config['remote']]['type'] != 'drive':
+            raise SafeError('remote_not_drive')
+        token = json.loads(parser[config['remote']]['token'])
+        expiry = datetime.fromisoformat(token.get('expiry', '').replace('Z', '+00:00'))
+        return token if expiry.timestamp() > time.time() + 60 else None
+    try:
+        token = cached()
+        if token is None:
+            # Refresh EXISTING authorization only. Never export it to Android or logs.
+            command = [config['rclone'], 'about', config['remote'] + ':', '--json',
+                        '--config', config['rclone_config'], '--retries', '1',
+                        '--low-level-retries', '1', '--timeout', '20s', '--contimeout', '10s']
+            if project:
+                command += ['--header', 'X-Goog-User-Project: ' + project]
+            subprocess.run(command, timeout=45, check=True, capture_output=True)
+            token = cached()
+        if token is None:
+            raise SafeError('existing_drive_authorization_expired')
+        return token['access_token']
+    except SafeError:
+        raise
+    except Exception:
+        raise SafeError('existing_drive_authorization_unavailable')
+
 class Drive:
     def __init__(self, config):
-        self.quota_project = config.get('quota_project')
-        if self.quota_project and not re.fullmatch(r'[a-z][a-z0-9-]{4,61}[a-z0-9]', self.quota_project):
-            raise SafeError('invalid_quota_project')
-        # Reuse a still-valid SDK/CLI-managed token; don't spend Drive calls refreshing each run.
-        def cached():
-            parser = configparser.RawConfigParser()
-            parser.read(config['rclone_config'])
-            if parser[config['remote']]['type'] != 'drive':
-                raise SafeError('remote_not_drive')
-            token = json.loads(parser[config['remote']]['token'])
-            expiry = datetime.fromisoformat(token.get('expiry', '').replace('Z', '+00:00'))
-            return token if expiry.timestamp() > time.time() + 60 else None
-        try:
-            token = cached()
-            if token is None:
-                # Refresh EXISTING authorization only. Never export it to Android or logs.
-                command = [config['rclone'], 'about', config['remote'] + ':', '--json',
-                            '--config', config['rclone_config'], '--retries', '1',
-                            '--low-level-retries', '1', '--timeout', '20s', '--contimeout', '10s']
-                if self.quota_project:
-                    command += ['--header', 'X-Goog-User-Project: ' + self.quota_project]
-                subprocess.run(command, timeout=45, check=True, capture_output=True)
-                token = cached()
-            if token is None:
-                raise SafeError('existing_drive_authorization_expired')
-            self.token = token['access_token']
-        except SafeError:
-            raise
-        except Exception:
-            raise SafeError('existing_drive_authorization_unavailable')
+        self.quota_project = quota_project(config)
+        self.token = drive_token(config, self.quota_project)
         self.opener = urllib.request.build_opener(NoRedirect())
 
     def request(self, path, params):

@@ -8,7 +8,8 @@ what it hears: every result is marked `review_only`.
 
 The worker only reads from Drive (GET requests). The scripts in this repository never
 download a program, a model or a credential. You run those downloads yourself, using
-the commands below.
+the commands below. Only if you turn it on (step 9), a separate step also copies each
+transcript as a Google Doc into one private folder of your own Drive.
 
 Commands run in Terminal, inside the `captura` folder (`cd ~/captura`). Each step says
 what you should see. The `capture` commands print JSON. Under it, Terminal also shows
@@ -183,6 +184,9 @@ python3 bin/capture drive-setup --from "op://Captura/Captura worker OAuth" --sco
 Leave out `--from ...` if you don't have an item. By hand, run
 `rclone config delete captura` and the four lines above with `scope=drive.readonly`.
 
+With `drive.readonly`, the optional publishing of step 9 can't create its Docs: it needs
+`drive.file`.
+
 The worker still makes only GET requests to one exact private folder. That limit is in
 the worker's code, though. Google sees a read-only grant to your whole Drive, so treat
 the token rclone saved in `~/.config/rclone/rclone.conf` as private.
@@ -248,6 +252,7 @@ Doctor checks:
 - `rclone` and the remote: it exists, has type `drive`, its scope, that its client ID
   looks like a Google client ID, that it is authorized, and that it has its own client
 - the pinned folder
+- whether publishing to Google Docs (step 9) is on, and whether its folder exists yet
 - that the inbox folder is writable
 
 It never prints the token or the client secret.
@@ -314,10 +319,59 @@ python3 bin/capture list --root "$HOME/Library/Application Support/Captura/inbox
   and open `~/captura-review/index.html`. That folder holds copies of your audio, so
   keep it private.
 
+## 9. Publish transcripts to Drive (optional)
+
+Off by default: transcripts stay on this Mac. Turn this on to also get each transcript
+as a Google Doc in your own Drive, so you can read it on the phone, share one Doc with
+someone, or let an assistant connected to your Drive (Gemini, Claude) read it. The audio
+is not uploaded again: it is already in «Captura · audios».
+
+First see what it would send. This only reads the inbox on this Mac and sends nothing:
+
+```sh
+python3 bin/capture publish --dry-run
+```
+
+- *You should see:* `"state": "dry_run"` and `would_publish` with one title per
+  transcript, like `2026-10-08 14:05 · the audio's file name`. Recordings where no speech
+  was detected are left out (`skipped_empty`); add `--include-empty` to publish them too.
+
+Then publish what is there now, and turn it on for every run:
+
+```sh
+python3 bin/capture publish
+python3 bin/capture set --publish on
+```
+
+- *You should see:* `"state": "published"` with `published` (Docs created), `skipped`
+  (already in Drive, or empty) and a `docs` list with each Doc's link. In Google Drive,
+  on the phone or the web, the folder **Captura · transcripciones** holds them. After
+  `set --publish on`, each `capture run` (and the launchd job below) publishes right
+  after transcribing, and its JSON gets a `publish` part with the same counts.
+- Each Doc starts with "Transcripción automática de Captura — borrador a revisar. Puede
+  tener errores y no identifica quién habla.", then the audio's name, the record ID, the
+  date, the language and the model, then one line per stretch of speech:
+  `[01:05] text`. It is a copy for reading: `record.json` on this Mac stays the original.
+- Publishing again never makes duplicates. The Mac remembers what it published in
+  `published.json` in the inbox, and before creating a Doc it looks in the folder for one
+  with the same record ID. Editing or deleting a Doc in Drive never changes the Mac.
+- The folder is created once, owned by your account and not shared. Keep it that way:
+  to show someone a transcript, share that one Doc. Publishing refuses a folder that is
+  shared or belongs to someone else, and says so (`transcripts_folder_shared`,
+  `transcripts_folder_not_owned`). It never changes or deletes anything else in Drive.
+- *If it says `publish_needs_drive_file_scope`:* the rclone remote is read-only. Redo
+  step 3 with `--scope drive.file --force`, or turn publishing off with
+  `python3 bin/capture set --publish off`.
+- *If it says `transcripts_folder_missing` or `transcripts_folder_trashed`:* you removed
+  the folder in Drive. Restore it from the trash, or move `published.json` out of the
+  inbox: the next publish creates a new folder and copies every transcript again.
+- Doctor shows whether publishing is on and whether the folder exists yet.
+
 ## How it behaves
 
 - `status.json`, the SQLite receipts, the failure log and the verified originals all
-  stay on your Mac.
+  stay on your Mac. Transcripts leave it only if you turn on step 9, and then only as
+  Docs in your own private folder.
 - The same file and hash is never processed twice, and the worker rejects a remote file
   that changes after it was accepted.
 - After 3 failures a recording is put aside (`quarantined`) for you to inspect. The

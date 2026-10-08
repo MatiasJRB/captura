@@ -62,6 +62,7 @@ LABELS = {
     'rclone_remote': 'the rclone connection to Google Drive (step 3)',
     'folder_id': "the phone's Drive folder (steps 6 and 7)",
     'root': 'the transcripts folder (step 4)',
+    'publish': 'publishing transcripts to Google Drive (optional)',
 }
 LANGUAGE = re.compile(r'[a-z]{2,3}|auto')
 REMOTE_NAME = re.compile(r'[A-Za-z0-9_. +@-]{1,64}')
@@ -257,7 +258,7 @@ def init_config(path, account, prog, remote=None, model=None, force=False, root=
                 next_step=command(prog, 'doctor', '--config', path))
 
 
-def update_config(path, prog, account=None, remote=None, model=None, root=None, language=None):
+def update_config(path, prog, account=None, remote=None, model=None, root=None, language=None, publish=None):
     """Changes only the values given; keeps the pinned folder and every other setting."""
     path = Path(os.path.expanduser(path))
     retry = _retry(prog, 'set', path, remote=remote, model=model, root=root, language=language)
@@ -267,11 +268,11 @@ def update_config(path, prog, account=None, remote=None, model=None, root=None, 
     if not path.is_file():
         return dict(state='error', error='config_not_found', config=str(path), next_step=STEP_4)
     wanted = dict(expected_account=account, remote=remote, model=model and _user_path(model),
-                  root=root and _user_path(root), language=language)
+                  root=root and _user_path(root), language=language, publish=publish)
     wanted = {key: value for key, value in wanted.items() if value is not None}
     if not wanted:
         return dict(state='error', error='nothing_to_set',
-                    next_step='Name what to change: --model, --root, --language, --account or --remote.')
+                    next_step='Name what to change: --model, --root, --language, --account, --remote or --publish.')
     config = json.loads(path.read_text(encoding='utf-8'))
     changed = {key: dict(old=config.get(key), new=value) for key, value in wanted.items()
                if config.get(key) != value}
@@ -282,6 +283,11 @@ def update_config(path, prog, account=None, remote=None, model=None, root=None, 
     if 'expected_account' in changed and config.get('folder_id'):
         result['note'] = ('The pinned folder belongs to the old account. Run probe and pin the new '
                           "account's folder (docs/worker.md steps 6 and 7).")
+    elif publish is True and 'publish' in changed:
+        result['next_step'] = command(prog, 'publish', '--config', path, '--dry-run')
+        result['note'] = ('Publishing is on: each run now also copies new transcripts as Google Docs into '
+                          '«Captura · transcripciones» in your Drive. The dry run lists what the first '
+                          'publish would send, without sending anything.')
     return result
 
 
@@ -542,6 +548,7 @@ def doctor(path, prog):
     else:
         checks.append(dict(check='folder_id', status=WARN, detail='not pinned yet (run never imports without it)',
                            next_step=command(prog, 'probe', '--config', shown)))
+    _check_publish(checks, config, prog, shown)
     root = Path(config['root'])
     existing = root
     while not existing.exists() and existing != existing.parent:
@@ -558,6 +565,38 @@ def doctor(path, prog):
                            next_step='Choose a folder you own for the transcripts with set --root '
                                      '(python3 bin/capture set --help).'))
     return _summary(checks, shown, prog, config)
+
+
+def _remote_scope(config):
+    """The rclone remote's scope setting, read without the token; '' if unknown."""
+    parser = configparser.RawConfigParser(strict=False, interpolation=None)
+    try:
+        parser.read_string(Path(os.path.expanduser(config.get('rclone_config', ''))).read_text(
+            encoding='utf-8', errors='replace'))
+        return parser[config.get('remote', '')].get('scope', '').strip()
+    except (OSError, KeyError, configparser.Error):
+        return ''
+
+
+def _check_publish(checks, config, prog, shown):
+    """Whether transcripts are also copied to Google Docs, and whether its folder is known. No network."""
+    if config.get('publish') is not True:
+        checks.append(dict(check='publish', status=OK,
+                           detail='off: transcripts stay on this Mac (set --publish on copies them to Google Docs)'))
+        return
+    import publish  # Local import: publish imports worker and reader, not onboarding.
+    scopes = {s.strip() for s in _remote_scope(config).split(',') if s.strip()}
+    if scopes and not scopes & {'drive', 'drive.file'}:
+        checks.append(dict(check='publish', status=WARN,
+                           detail='on, but the rclone remote is read-only and cannot create the Docs',
+                           next_step=drive_setup_command(prog, shown, config.get('remote'), '--force'),
+                           note='Publishing needs scope drive.file (docs/worker.md step 3), or turn it off '
+                                'with set --publish off.'))
+        return
+    folder = publish.folder_known(config)
+    checks.append(dict(check='publish', status=OK,
+                       detail=f'on: folder «{publish.FOLDER_NAME}» ' + (f'known ({folder})' if folder else
+                              'not created yet (the first publish creates it)')))
 
 
 ADVICE = ('next_step', 'note', 'alternative')
