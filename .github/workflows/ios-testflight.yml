@@ -119,6 +119,7 @@ jobs:
       - name: Write the export options
         env:
           TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          INTERNAL_ONLY: ${{ vars.TESTFLIGHT_INTERNAL_ONLY || 'true' }}
         run: |
           cat > "$EXPORT_OPTIONS" <<PLIST
           <?xml version="1.0" encoding="UTF-8"?>
@@ -130,7 +131,7 @@ jobs:
             <key>teamID</key><string>${TEAM_ID}</string>
             <key>signingStyle</key><string>automatic</string>
             <key>uploadSymbols</key><true/>
-            <key>testFlightInternalTestingOnly</key><true/>
+            <key>testFlightInternalTestingOnly</key><${INTERNAL_ONLY}/>
           </dict>
           </plist>
           PLIST

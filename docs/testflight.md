@@ -64,8 +64,12 @@ same. The run takes about 10 minutes and ends with the build in TestFlight.
   the run summary and stops; the build job never starts.
 - `CURRENT_PROJECT_VERSION` is the Actions run number, so every upload has a new build
   number. `MARKETING_VERSION` stays what `project.pbxproj` says.
-- `testFlightInternalTestingOnly` is set: the build goes to internal testers only and is
-  never offered for external distribution by accident.
+- `testFlightInternalTestingOnly` is set, so the build reaches internal testers only and
+  is never offered for external distribution by accident. Internal testers must be users
+  of your App Store Connect, and they get every build with no review. To hand the app to
+  people who are not users, set the repository variable `TESTFLIGHT_INTERNAL_ONLY` to
+  `false`, build again, and distribute that build through an external group: those take
+  any email address, but the first build of a version waits for Beta App Review.
 - `ITSAppUsesNonExemptEncryption` is already `false` in `Info.plist`, so no export
   compliance question per build.
 
