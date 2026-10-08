@@ -142,6 +142,13 @@ de Apple y después **Confiar**. Abrí Captura.
    cliente de escritorio sin mostrarlos. Sin ítem, el mismo comando sin `--from` te los
    pide y el secreto no se ve al pegarlo.
 
+**Dónde leer las transcripciones.** La Mac transcribe; la app del iPhone no muestra
+texto. En la Mac las ves con `capture list` o `capture view` (paso 8 del worker). Para
+leerlas en el teléfono, activá la publicación en la Mac (paso 9 del worker,
+`python3 bin/capture set --publish on`): cada transcripción aparece también como un
+documento de Google en la carpeta **Captura · transcripciones** de tu Drive, que abrís
+con la app de Google Drive o Documentos. Viene apagada.
+
 ## Cada 7 días
 
 1. En Captura, tocá **Detener** si está grabando.

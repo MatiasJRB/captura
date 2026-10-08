@@ -290,6 +290,13 @@ Account. Tap **Confiar en "…"** (Trust), then confirm.
    Otherwise, send it to yourself in a note.
 5. Set up the [worker on the Mac](worker.md).
 
+**Where to read the transcripts.** The Mac transcribes; the iPhone app doesn't show
+text. On the Mac, `capture list` and `capture view` show them ([worker step 8](worker.md#8-run-it)).
+To read them on the phone, turn on publishing on the Mac
+([worker step 9](worker.md#9-publish-transcripts-to-drive-optional)): each transcript
+then also appears as a Google Doc in the Drive folder **Captura · transcripciones**, which
+you open in the Google Drive or Google Docs app. It is off by default.
+
 Captura records only while the app shows "Grabando". You can also start it from
 Shortcuts, Siri or the Action Button with **Grabar con Captura**. It opens the app and
 then starts recording, because iOS doesn't let an app start the microphone from the

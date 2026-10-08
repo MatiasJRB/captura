@@ -253,3 +253,40 @@ Not verified: the real 1Password CLI against a real item (its error texts are ma
 phrase, so an unrecognized one falls back to a generic message), the real Keychain, and a
 real `rclone config reconnect` sign-in with a Desktop client, including which questions
 rclone asks first.
+
+## Opt-in publishing of transcripts to Google Docs — 2026-10-08
+
+`capture publish` and `"publish": true` (`capture set --publish on`, off by default) copy
+each finished record into a Google Doc in the person's own Drive folder
+«Captura · transcripciones». The code is `worker/publish.py`, separate from the GET-only
+importer, which is unchanged apart from moving its token lookup into a shared helper
+(`worker.drive_token`, same behavior, its tests unchanged).
+
+Checked here (macOS 26.1, Python 3.9.6), with a fake opener that answers like Drive and
+records every request; no network and no real account:
+- 40 tests in `worker/` (22 new) and 134 in `tests/` (4 new); the publication check.
+- The allowlist accepts only GET about/files/files/ID, POST files and POST
+  upload/files?uploadType=multipart on https://www.googleapis.com; other hosts, ports,
+  userinfo, http, DELETE/PATCH/PUT, permissions/copy paths, `alt=media`, resumable
+  uploads, extra or repeated query keys are refused before anything is sent.
+- Folder: created with `personalCaptureTranscripts=1` and no parents; reused when found
+  by that property even if renamed; the remembered ID re-checked on later runs; shared,
+  not-owned, non-folder, several matches, or a folder that disappeared are refused with
+  their own error and nothing is written. The state file `published.json` is 0600 and
+  written atomically.
+- Doc: multipart body with JSON metadata (Doc mimeType, the folder as parent,
+  `captureRecordId`, `captureOriginalSha256`) and the text as text/plain; title in local
+  time with the audio's name; Spanish header; `[mm:ss]` lines; control characters
+  removed; record text left as plain text (markup is not interpreted).
+- Idempotency: an existing Doc with the record ID is not duplicated; a local receipt
+  means a rerun takes no token and makes no request; a changed original hash is reported,
+  not republished. `--dry-run` takes no token, makes no request and writes no file.
+  `no_speech_detected` records are skipped unless `--include-empty`.
+- `run` followed by publishing when `"publish": true`, and nothing when off or when the
+  run failed. HTTP and connection errors, and unexpected exceptions, come out as fixed
+  codes without the token or the response body. Doctor reports publishing on or off,
+  whether its folder is known, and warns when the remote is `drive.readonly`.
+
+Not verified: a real publish against Google Drive (that a `drive.file` Desktop client
+can create the folder and convert the upload to a Doc, the Doc's look on the phone, and
+how Drive search treats the properties right after creation).

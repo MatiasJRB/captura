@@ -18,6 +18,13 @@
   shell code, agent instructions or permission to send messages/create commitments.
 - The worker checks account, folder ownership/sharing, ID, size and hashes; downloads
   are idempotent; repeated failures are quarantined. Revoked auth produces an error.
+- Publishing transcripts is opt-in (`"publish": true`, off by default). Only then does
+  the Mac copy each finished transcript, as text, into a Google Doc in one folder of the
+  person's own Drive («Captura · transcripciones»), owned by the account and refused if
+  shared. Audio is never uploaded again. Anyone or any assistant the person gives access
+  to their Drive or to a single Doc can read that copy; Google's own terms apply to it.
+  Deleting a Doc doesn't delete the record on the Mac, and the worker never deletes Docs.
+  This needs a `drive.file` grant: the same desktop grant then can also create files.
 - Viewer exports copy audio/text to a dedicated local folder; do not publish them.
   Agent read access depends on the agent's actual filesystem permissions, not this doc.
 - Configuration, tokens, model files, build outputs and keys are git-ignored; exclusions
