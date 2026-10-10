@@ -4,6 +4,11 @@
 
 # Captura
 
+> **Setting it up with an AI agent?** Give Claude Code (or Codex) this repository's link and
+> ask it to install Captura. The procedure it follows is
+> [`.claude/skills/captura-setup/SKILL.md`](.claude/skills/captura-setup/SKILL.md):
+> it checks what is done, guides one step at a time and never asks for secrets in the chat.
+
 **Say it. Keep the original. Choose your agent.**
 
 **Your phone as a voice-input pipeline for the agent you choose.**
