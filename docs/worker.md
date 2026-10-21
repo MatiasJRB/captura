@@ -385,6 +385,10 @@ python3 bin/capture set --publish on
 
 ## Optional: run every 15 minutes with launchd
 
+For metadata-only transcription status on the iPhone, see
+[Mac → iPhone feedback](worker-feedback.es.md). It is a separate opt-in
+(`capture set --feedback on`), and `capture run` then refreshes that report too.
+
 The scripts don't install this for you. Run one manual `capture run` that works first.
 This makes a macOS LaunchAgent that runs the worker every 15 minutes while you're
 logged in and the Mac is awake:

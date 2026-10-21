@@ -38,6 +38,64 @@ final class AppModelTests: XCTestCase {
 
     // MARK: - Chunk intake
 
+    func testFeedbackRefreshesWithNoPendingUploadsAndClearsOnUnlink() async throws {
+        let sync = FakeSyncService()
+        let h = try make(sync: sync, prepare: { settings in
+            try settings.update {
+                $0.folderID = "fixtureFolder0001"
+                $0.driveAccountEmail = AppAuthFixtures.email
+            }
+        })
+        await h.auth.refreshStatus()
+        let bytes = try JSONSerialization.data(withJSONObject: [
+            "schema_version":1, "available":true, "generated_at":h.clock.now().timeIntervalSince1970 * 1000,
+            "records":[]
+        ])
+        sync.feedbackResult = WorkerFeedback.parse(bytes, now: h.clock.now())
+        await h.model.refreshWorkerFeedback()
+        XCTAssertEqual(sync.feedbackCount, 1)
+        XCTAssertEqual(h.model.transcriptionSummary, "Sin archivos")
+        await h.model.unlinkDrive()
+        XCTAssertEqual(h.model.workerFeedback, .unavailable)
+        XCTAssertEqual(h.model.transcriptionSummary, "Sin confirmar")
+    }
+
+    func testFeedbackOfflineNeverUsesNetworkOrRetainsCompletion() async throws {
+        let sync = FakeSyncService()
+        let h = try make(network: .noNetwork, sync: sync)
+        await h.auth.refreshStatus()
+        await h.model.refreshWorkerFeedback()
+        XCTAssertEqual(sync.feedbackCount, 0)
+        XCTAssertEqual(h.model.workerFeedback, .unavailable)
+        XCTAssertEqual(h.model.transcriptionSummary, "Sin confirmar")
+    }
+
+    func testExpiredFeedbackClearsBeforeASlowReplyFinishes() async throws {
+        let sync = FakeSyncService()
+        let h = try make(sync: sync, prepare: { settings in
+            try settings.update { $0.folderID = "fixtureFolder0001"; $0.driveAccountEmail = AppAuthFixtures.email }
+        })
+        await h.auth.refreshStatus()
+        let bytes = try JSONSerialization.data(withJSONObject: [
+            "schema_version":1, "available":true, "generated_at":h.clock.now().timeIntervalSince1970 * 1000,
+            "records":[]
+        ])
+        sync.feedbackResult = WorkerFeedback.parse(bytes, now: h.clock.now())
+        await h.model.refreshWorkerFeedback()
+        XCTAssertNotNil(h.model.workerFeedback.generatedAt)
+        let (stream, continuation) = AsyncStream<Void>.makeStream()
+        sync.beforeFeedbackReply = { for await _ in stream { break } }
+        let pending = Task { await h.model.refreshWorkerFeedback() }
+        for _ in 0..<1000 where sync.feedbackCount < 2 { await Task.yield() }
+        XCTAssertEqual(sync.feedbackCount, 2)
+        h.clock.advance(by: 3601)
+        await h.model.refreshWorkerFeedback()
+        XCTAssertEqual(h.model.workerFeedback, .unavailable)
+        XCTAssertEqual(h.model.transcriptionSummary, "Sin confirmar")
+        continuation.yield(()); continuation.finish()
+        await pending.value
+    }
+
     func testClosedChunkIsQueuedAsPendingWithItsChecksums() async throws {
         let h = try make()
         try await h.recordAndStop(seconds: 3)

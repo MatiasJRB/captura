@@ -45,15 +45,17 @@
       "id": "ios",
       "objective": "Mantener paridad de captura y distribuir una candidata identificable por el circuito de firma existente.",
       "owner": "Responsable iOS/agente con acceso; titular de Apple conserva cuenta y firma; tester con iPhone valida.",
-      "status": "needs_review",
+      "status": "pending",
       "sources": [
         "docs/ios.md",
         "docs/ios.es.md",
         "docs/testflight.md",
         ".github/workflows/ios-testflight.yml",
-        "ios/Captura/Recording/RecorderController.swift"
+        "ios/Captura/Recording/RecorderController.swift",
+        "docs/project/ios-feedback-spec.md",
+        "docs/worker-feedback.es.md"
       ],
-      "nextAction": "Conciliar main con la candidata local y verificar acceso vigente al circuito de distribución antes de firmar o subir.",
+      "nextAction": "Verificar la candidata integrada y el retorno con una cuenta propia/iPhone cuando estén disponibles; firma y QA física pendientes, sin depender de Mauro para código/builds.",
       "dependencies": [
         "Acceso autorizado al circuito, identidad Apple y OAuth existentes; iPhone sólo para el gate físico."
       ],
@@ -112,14 +114,17 @@
       "id": "feedback",
       "objective": "Distinguir captura, subida y transcripción con procedencia y vigencia; mostrar desconocido sin retorno real.",
       "owner": "Responsable de contrato de estado; implementadores Android/iOS/worker acuerdan archivos antes de editar.",
-      "status": "needs_review",
+      "status": "pending",
       "sources": [
         "docs/agent-interface.md",
         "docs/verification.md",
         "ios/Captura/App/AppModel.swift",
-        "android/src/org/example/captura/MainActivity.java"
+        "android/src/org/example/captura/MainActivity.java",
+        "worker/feedback.py",
+        "ios/CapturaCore/Sources/CapturaCore/Sync/WorkerFeedback.swift",
+        "docs/worker-feedback.es.md"
       ],
-      "nextAction": "Inventariar por plataforma lo que main soporta y lo que sigue local o pendiente; especificar el retorno de estado antes de anunciarlo.",
+      "nextAction": "Tras los gates técnicos de esta ola, configurar opt-in en una Mac/cuenta autorizada y validar lectura en iPhone real; no afirmar QA física desde el fixture.",
       "dependencies": [
         "Contrato de IDs/hashes y fecha; retorno efectivamente implementado y autorizado; texto/IA sólo con consentimiento propio."
       ],

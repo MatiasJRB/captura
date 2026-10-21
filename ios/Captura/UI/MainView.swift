@@ -2,36 +2,64 @@ import CapturaCore
 import SwiftUI
 import UIKit
 
-/// The single screen, like Android's compact home: recording state and control, the
-/// Drive link and queue, and the local recordings. Dark from the first frame.
+/// Native status-first overview. Settings remain explicit; no recording browser.
 struct MainView: View {
     let model: AppModel
     @Environment(\.scenePhase) private var scenePhase
+    @State private var showSettings = false
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                Text("Captura")
-                    .font(.largeTitle.weight(.bold))
-                    .foregroundStyle(Theme.fg)
-                    .accessibilityAddTraits(.isHeader)
-                RecorderPanel(model: model)
-                DrivePanel(model: model)
-                RecordingsPanel(rows: model.recordings)
-                Text("Los originales se quedan en este iPhone. Captura no transcribe ni ejecuta instrucciones de lo que se graba.")
-                    .font(.footnote)
-                    .foregroundStyle(Theme.muted)
-                    .padding(.top, 12)
+        GeometryReader { geometry in
+            ScrollView {
+                VStack(alignment: .leading, spacing: 24) {
+                    HStack {
+                        Text("Captura").font(.title.weight(.bold)).accessibilityAddTraits(.isHeader)
+                        Spacer()
+                        Button { showSettings = true } label: { Image(systemName: "gearshape").font(.title2).frame(width: 48, height: 48) }
+                            .accessibilityLabel("Ajustes")
+                    }
+                    if geometry.size.width > 600 {
+                        HStack(alignment: .top, spacing: 24) {
+                            RecorderPanel(model: model).frame(maxWidth: .infinity)
+                            ProcessingPanel(model: model, openSettings: { showSettings = true }).frame(maxWidth: .infinity)
+                        }
+                        TopicPanel(feedback: model.workerFeedback)
+                    } else {
+                        RecorderPanel(model: model)
+                        TopicPanel(feedback: model.workerFeedback)
+                        ProcessingPanel(model: model, openSettings: { showSettings = true })
+                    }
+                }
+                .foregroundStyle(Theme.fg)
+                .padding(24)
+                .frame(maxWidth: 900)
+                .frame(maxWidth: .infinity)
             }
-            .padding(.horizontal, 20)
-            .padding(.vertical, 24)
-            .frame(maxWidth: 680, alignment: .leading)
-            .frame(maxWidth: .infinity)
         }
-        .scrollIndicators(.automatic)
         .background(Theme.bg.ignoresSafeArea())
         .tint(Theme.accent)
         .preferredColorScheme(.dark)
+        .sheet(isPresented: $showSettings) {
+            NavigationStack {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 16) {
+                        DrivePanel(model: model)
+                        Text("Avisá a las personas antes de grabar. Los originales se conservan en este iPhone.")
+                            .font(.footnote).foregroundStyle(Theme.muted)
+                    }.padding(24)
+                }
+                .background(Theme.bg.ignoresSafeArea())
+                .navigationTitle("Ajustes")
+                .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Cerrar") { showSettings = false } } }
+                .toolbarBackground(Theme.bg, for: .navigationBar).toolbarBackground(.visible, for: .navigationBar)
+            }.preferredColorScheme(.dark).tint(Theme.accent)
+        }
+        .task {
+            while !Task.isCancelled {
+                if scenePhase == .active { await model.refreshWorkerFeedback() }
+                try? await Task.sleep(for: .seconds(60))
+            }
+        }
         .onChange(of: scenePhase, initial: true) { _, phase in
             switch phase {
             case .active:
@@ -41,11 +69,113 @@ struct MainView: View {
                     await model.runLaunchAutomation(LaunchOptions.current)
                     #endif
                 }
-            case .background:
-                model.sceneEnteredBackground()
-            default:
-                break
+            case .background: model.sceneEnteredBackground()
+            default: break
             }
+        }
+    }
+}
+
+private struct TopicPanel: View {
+    let feedback: WorkerFeedback
+    @State private var quoteIndex = 0
+    @State private var showSource = false
+    private var quote: WorkerFeedback.Quote? {
+        feedback.quotes.isEmpty ? nil : feedback.quotes[quoteIndex % feedback.quotes.count]
+    }
+    var body: some View {
+        if let topic = feedback.topics.first {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Text(topic).font(.title3.weight(.bold)).foregroundStyle(Theme.accent)
+                    Spacer(minLength: 8)
+                    if feedback.quotes.count > 1 {
+                        Button { quoteIndex = (quoteIndex + 1) % feedback.quotes.count } label: {
+                            Image(systemName: "chevron.right").frame(width: 48, height: 48)
+                        }.accessibilityLabel("Otra cita")
+                    }
+                }
+                if feedback.topics.count > 1 {
+                    Text(feedback.topics.dropFirst().joined(separator: " · ")).font(.footnote).foregroundStyle(Theme.muted)
+                }
+                if let quote {
+                    Text("“\(quote.text)”").font(.body).foregroundStyle(Theme.fg).lineLimit(3)
+                    Button {
+                        showSource = true
+                    } label: {
+                        Text("Cita de transcripción · \(quote.processedAt.formatted(date: .abbreviated, time: .shortened)) · detalles")
+                            .font(.caption).foregroundStyle(Theme.muted).frame(minHeight: 48, alignment: .leading)
+                    }.buttonStyle(.plain)
+                }
+            }
+            .padding(16).frame(maxWidth: .infinity, alignment: .leading)
+            .background(Theme.surface, in: RoundedRectangle(cornerRadius: Theme.radius))
+            .onChange(of: feedback.quotes) { _, _ in quoteIndex = 0 }
+            .sheet(isPresented: $showSource) {
+                NavigationStack {
+                    ScrollView {
+                        if let quote {
+                            VStack(alignment: .leading, spacing: 16) {
+                                Text(quote.text).font(.title3).textSelection(.enabled)
+                                Text("Transcripción automática: puede tener errores. No identifica al hablante.")
+                                Text("Referencia: \(quote.id)\nPosición: \(quote.startMilliseconds / 1000) s.\nLa fecha corresponde al procesamiento en la Mac.")
+                            }.padding(24).foregroundStyle(Theme.fg)
+                        }
+                    }.background(Theme.bg.ignoresSafeArea())
+                    .navigationTitle("Cita de transcripción")
+                    .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Cerrar") { showSource = false } } }
+                }.preferredColorScheme(.dark)
+            }
+        }
+    }
+}
+
+private struct ProcessingPanel: View {
+    let model: AppModel
+    let openSettings: () -> Void
+    @State private var confirmSync = false
+    private var drive: String {
+        if model.queueUnavailableMessage != nil { return "Sin estado" }
+        if !model.isLinked { return "Sin vincular" }
+        if model.counts.waiting > 0 { return "\(model.counts.waiting) por subir" }
+        if model.counts.quarantined > 0 { return "\(model.counts.quarantined) para revisar" }
+        return model.counts.verified > 0 ? "Todo subido" : "Sin archivos"
+    }
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Procesamiento").font(.headline).padding(.bottom, 4)
+            HStack {
+                Label("Drive", systemImage: "arrow.up.doc")
+                Spacer(minLength: 8)
+                Text(drive).font(.callout).foregroundStyle(model.counts.waiting > 0 ? Theme.warning : Theme.muted)
+                Button {
+                    if model.isLinked { confirmSync = true } else { openSettings() }
+                } label: { Image(systemName: "arrow.triangle.2.circlepath").frame(width: 48, height: 48) }
+                    .accessibilityLabel("Sincronizar archivos").disabled(model.isSyncing)
+            }.padding(.leading, 12).background(Theme.surface, in: RoundedRectangle(cornerRadius: Theme.radius))
+            HStack {
+                Label("Transcripción", systemImage: "doc.text")
+                Spacer(minLength: 8)
+                Text(model.transcriptionSummary).font(.callout)
+                    .foregroundStyle(model.transcriptionSummary == "Sin pendientes" ? Theme.success : Theme.muted)
+            }.frame(minHeight: 48).padding(.horizontal, 12)
+                .background(Theme.surface, in: RoundedRectangle(cornerRadius: Theme.radius))
+            if let date = model.workerFeedback.generatedAt {
+                Text("Estado de Mac · \(date.formatted(date: .abbreviated, time: .shortened))").font(.footnote).foregroundStyle(Theme.muted)
+            } else {
+                Text("Sin estado de la Mac").font(.footnote).foregroundStyle(Theme.muted)
+            }
+            if model.counts.quarantined > 0 || !model.recorder.recoveredOnLaunch.isEmpty || model.queueUnavailableMessage != nil {
+                Button("Hay audios para revisar · Detalles", action: openSettings)
+                    .font(.callout).foregroundStyle(Theme.warning).frame(maxWidth: .infinity, minHeight: 48)
+                    .background(Theme.attention, in: RoundedRectangle(cornerRadius: Theme.radius))
+            }
+        }
+        .alert("Sincronizar ahora", isPresented: $confirmSync) {
+            Button(model.network.wifi ? "Sincronizar" : "Permitir red disponible") { Task { await model.syncNow() } }
+            Button("Cancelar", role: .cancel) {}
+        } message: {
+            Text("Subir los audios de Captura a «\(CaptureNaming.folderName)», cuenta \(model.linkedEmail ?? "vinculada"). Permite la red disponible por 30 minutos. Si estás grabando, guarda el tramo y sigue grabando. Conserva los originales.")
         }
     }
 }
@@ -61,10 +191,6 @@ private struct RecorderPanel: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             RecorderStatusCard(recorder: recorder)
-
-            Text("Avisá a las personas antes de grabar.")
-                .font(.body.weight(.semibold))
-                .foregroundStyle(Theme.accent)
 
             primaryButton
 
@@ -133,7 +259,7 @@ private struct RecorderStatusCard: View {
                     let elapsed = recorder.elapsed(at: context.date)
                     card(
                         title: "Grabando · \(Self.clock(elapsed))",
-                        detail: "El audio se guarda en este iPhone en tramos de \(Self.chunkMinutes(recorder.chunkDuration)).",
+                        detail: "El audio se guarda en este iPhone.",
                         color: Theme.error,
                         spokenTitle: "Grabando, \(Self.spoken(elapsed))"
                     )
@@ -149,7 +275,7 @@ private struct RecorderStatusCard: View {
                 case .failed(let message):
                     card(title: "No se está grabando", detail: message, color: Theme.error)
                 default:
-                    card(title: "Micrófono apagado", detail: "Tocá Grabar para empezar. La grabación siempre se ve acá.", color: Theme.fg)
+                    card(title: "Micrófono apagado", detail: "La captura está detenida", color: Theme.fg)
                 }
             }
         }
@@ -158,19 +284,17 @@ private struct RecorderStatusCard: View {
     }
 
     private func card(title: String, detail: String, color: Color, spokenTitle: String? = nil) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(spacing: 12) {
+            Image(systemName: recorder.state.isRecording ? "record.circle" : "mic.slash")
+                .font(.system(size: 36)).foregroundStyle(color)
             Text(title)
-                .font(.title2.weight(.semibold).monospacedDigit())
-                .foregroundStyle(color)
+                .font(.largeTitle.weight(.bold).monospacedDigit())
+                .foregroundStyle(color).multilineTextAlignment(.center)
                 .accessibilityLabel(spokenTitle ?? title)
-            Text(detail)
-                .font(.callout)
-                .foregroundStyle(Theme.muted)
+            Text(detail).font(.callout).foregroundStyle(Theme.muted).multilineTextAlignment(.center)
         }
-        .padding(16)
-        .frame(maxWidth: .infinity, minHeight: 104, alignment: .leading)
-        .background(Theme.surface, in: RoundedRectangle(cornerRadius: Theme.radius))
-        .overlay(RoundedRectangle(cornerRadius: Theme.radius).stroke(Theme.line, lineWidth: 1))
+        .padding(.vertical, 16)
+        .frame(maxWidth: .infinity, alignment: .center)
     }
 
     static func clock(_ seconds: TimeInterval) -> String {

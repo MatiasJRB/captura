@@ -240,6 +240,19 @@ final class PauseNoticeTests: XCTestCase {
 
     // MARK: - System adapter
 
+    func testEveryPauseNoticeKeepsItsVisibleMessageWithoutSound() {
+        let reasons: [RecorderPauseReason] = [.interrupted, .waitingForTheApp, .inputLost, .microphoneLost, .lowStorage, .writeFailed]
+        for reason in reasons {
+            let notice = PauseNotice(reason)
+            let request = SystemPauseNotifier.request(notice)
+            XCTAssertNil(request.content.sound)
+            XCTAssertEqual(request.content.title, notice.title)
+            XCTAssertEqual(request.content.body, notice.body)
+            XCTAssertEqual(request.identifier, SystemPauseNotifier.identifier)
+            XCTAssertNil(request.trigger)
+        }
+    }
+
     /// The app has no entitlements file and no push capability: local notifications need
     /// neither. Reading the choice never shows the prompt, and withdrawing with nothing
     /// delivered is harmless. Nothing is posted here, so no notice can appear.

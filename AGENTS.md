@@ -26,6 +26,12 @@ The safety and product boundaries below continue to apply.
   publish`), its own allowlist (googleapis.com; about, list/get, create its folder,
   multipart create of a Doc), limited to its own unshared folder. It never updates,
   shares or deletes Drive files and never uploads audio.
+- Processing feedback is a separate opt-in writer (`worker/feedback.py`, `feedback:
+  true` or `capture feedback`). It may POST one marked application/json report in
+  the pinned private phone inbox and PATCH only that same report's media after
+  rechecking its ownership, parent and markers. Metadata only: IDs/hashes/states;
+  never audio/text, permissions, folders, recordings or transcript Docs. Importer
+  and transcript publisher retain their original restrictions above.
 - Verify `python3 -m unittest discover -s worker -v` and `... -s tests -v`
   (Python 3.9+, stdlib only) and `python3 scripts/check_public_tree.py`.
 - Android: `ANDROID_HOME=... ./android/build.sh`; never install onto an active recorder.

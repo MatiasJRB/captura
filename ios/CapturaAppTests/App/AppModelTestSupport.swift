@@ -16,6 +16,10 @@ final class FakeSyncService: SyncService, @unchecked Sendable {
     private let lock = NSLock()
     private var _runs: [SyncTrigger] = []
     private var _ensureFolderCount = 0
+    var feedbackResult: WorkerFeedback = .unavailable
+    var beforeFeedbackReply: (@Sendable () async -> Void)?
+    private var _feedbackCount = 0
+    var feedbackCount: Int { lock.withLock { _feedbackCount } }
     private var _summary = SyncSummary()
     private var _folder: Result<DriveFolderResolution, Error> = .success(DriveFolderResolution(id: "fixtureFolder0001", outcome: .created))
     /// Runs this closure (e.g. to persist the folder ID like the real engine) before answering.
@@ -57,6 +61,12 @@ final class FakeSyncService: SyncService, @unchecked Sendable {
         let resolution = try result.get()
         try await onEnsureFolder?(resolution.id)
         return resolution
+    }
+
+    func workerFeedback(allowsCellular: Bool) async throws -> WorkerFeedback {
+        lock.withLock { _feedbackCount += 1 }
+        await beforeFeedbackReply?()
+        return lock.withLock { feedbackResult }
     }
 }
 

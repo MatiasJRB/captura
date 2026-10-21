@@ -8,6 +8,11 @@ protocol SyncService: Sendable {
     func run(_ trigger: SyncTrigger, onEvent: @escaping @Sendable (SyncEvent) -> Void) async -> SyncSummary
     /// Creates or validates the private inbox folder in Drive.
     func ensureFolder() async throws -> DriveFolderResolution
+    func workerFeedback(allowsCellular: Bool) async throws -> WorkerFeedback
+}
+
+extension SyncService {
+    func workerFeedback(allowsCellular: Bool) async throws -> WorkerFeedback { .unavailable }
 }
 
 /// Builds a `SyncEngine` per run, with a transport that matches the trigger: an
@@ -50,6 +55,12 @@ struct DriveSyncService: SyncService {
     /// it only exchanges small metadata requests.
     func ensureFolder() async throws -> DriveFolderResolution {
         try await engine(allowsCellular: true, onEvent: nil).ensureFolder()
+    }
+
+    func workerFeedback(allowsCellular: Bool) async throws -> WorkerFeedback {
+        guard let folderID = await folderStorage.load() else { return .unavailable }
+        let drive = DriveClient(transport: makeTransport(allowsCellular), token: token)
+        return try await drive.workerFeedback(folderID: folderID, deviceID: deviceID, now: now())
     }
 
     private func engine(allowsCellular: Bool, onEvent: (@Sendable (SyncEvent) -> Void)?) -> SyncEngine {

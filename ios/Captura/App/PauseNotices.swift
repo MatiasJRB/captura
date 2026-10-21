@@ -78,24 +78,28 @@ final class SystemPauseNotifier: PauseNotifying {
 
     func requestPermission() async -> NoticePermission {
         do {
-            return try await center.requestAuthorization(options: [.alert, .sound]) ? .allowed : .denied
+            return try await center.requestAuthorization(options: [.alert]) ? .allowed : .denied
         } catch {
             log.info("Notice permission request failed: \(LogPrivacy.publicSummary(of: error), privacy: .public)")
             return .denied
         }
     }
 
-    func post(_ notice: PauseNotice) {
+    /// Visible but silent, including when an interruption is followed by capture resuming.
+    static func request(_ notice: PauseNotice) -> UNNotificationRequest {
         let content = UNMutableNotificationContent()
         content.title = notice.title
         content.body = notice.body
-        content.sound = .default
+        content.sound = nil
         content.threadIdentifier = Self.identifier
         // The default `.active` level: time-sensitive notices need a paid capability.
         // No trigger: delivered right away, before iOS can suspend the app.
-        let request = UNNotificationRequest(identifier: Self.identifier, content: content, trigger: nil)
+        return UNNotificationRequest(identifier: Self.identifier, content: content, trigger: nil)
+    }
+
+    func post(_ notice: PauseNotice) {
         let log = self.log
-        center.add(request) { error in
+        center.add(Self.request(notice)) { error in
             // Notices turned off in Ajustes: iOS refuses quietly and recording is unaffected.
             if let error {
                 log.info("Pause notice not shown: \(LogPrivacy.publicSummary(of: error), privacy: .public)")

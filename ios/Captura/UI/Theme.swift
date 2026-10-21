@@ -3,18 +3,21 @@ import SwiftUI
 /// Tokens from `DESIGN.md` (the reader's palette), shared with the Android recorder's
 /// dark window. System fonts only; no remote assets.
 enum Theme {
-    static let bg = Color(hex: 0x111815)
-    static let surface = Color(hex: 0x1D2822)
-    static let fg = Color(hex: 0xE7ECE8)
-    static let muted = Color(hex: 0xB8C5BF)
-    static let accent = Color(hex: 0xA1D6BE)
-    static let line = Color(hex: 0x3B4B42)
-    static let error = Color(hex: 0xF3B8A4)
+    static let bg = Color(hex: 0x07111F)
+    static let surface = Color(hex: 0x001E49)
+    static let fg = Color(hex: 0xF3F7FB)
+    static let muted = Color(hex: 0xA8B9CD)
+    static let accent = Color(hex: 0x70C5FB)
+    static let line = Color(hex: 0x29415E)
+    static let success = Color(hex: 0x00EF91)
+    static let warning = Color(hex: 0xF6D68B)
+    static let attention = Color(hex: 0x332916)
+    static let error = Color(hex: 0xFFB5A6)
 
     /// Minimum height of every tappable control (Apple's minimum is 44 pt).
     static let touchTarget: CGFloat = 52
-    static let primaryButtonHeight: CGFloat = 76
-    static let radius: CGFloat = 8
+    static let primaryButtonHeight: CGFloat = 56
+    static let radius: CGFloat = 12
 }
 
 extension Color {
@@ -38,8 +41,8 @@ struct PrimaryButtonStyle: ButtonStyle {
             .font(.title2.weight(.semibold))
             .foregroundStyle(Theme.bg)
             .frame(maxWidth: .infinity, minHeight: Theme.primaryButtonHeight)
-            .background(fill.opacity(configuration.isPressed ? 0.8 : 1), in: RoundedRectangle(cornerRadius: Theme.radius))
-            .contentShape(RoundedRectangle(cornerRadius: Theme.radius))
+            .background(fill.opacity(configuration.isPressed ? 0.8 : 1), in: Capsule())
+            .contentShape(Capsule())
     }
 }
 
