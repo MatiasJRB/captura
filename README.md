@@ -58,6 +58,8 @@ that folder is sensitive and must never be published casually.
   install from the TestFlight app with no Mac, Xcode or cable. Needs a paid Apple account.
 - [Worker](docs/worker.md): macOS, Homebrew whisper.cpp/ffmpeg/rclone, models, then
   `capture drive-setup` → `init` → `doctor` → `probe` → `pin` → `run` (`set` changes a value later).
+- [Retorno de estados al iPhone](docs/worker-feedback.es.md): progreso de
+  transcripción por Drive, sólo metadatos y opt-in independiente de la Mac.
 - Setup values can come from a password manager (`--from op://…`, `keychain://…`) instead of
   being pasted: an organization shares one item and each person runs two commands.
 - Setting it up with a coding agent: [`captura-setup`](.claude/skills/captura-setup/SKILL.md)

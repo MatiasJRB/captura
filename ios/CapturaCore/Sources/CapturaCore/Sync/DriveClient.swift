@@ -97,6 +97,42 @@ public final class DriveClient: Sendable {
         return try DriveFileMetadata.decode(response.body)
     }
 
+    /// Reads only the one marked metadata report inside this device's private inbox.
+    /// Missing/expired reports never imply completed transcription.
+    public func workerFeedback(folderID: String, deviceID: String, now: Date = Date()) async throws -> WorkerFeedback {
+        guard WorkerContract.isDriveIdentifier(folderID), Self.isValidDeviceID(deviceID),
+              let folder = try await metadata(id: folderID),
+              Self.evaluateFolder(folder, id: folderID, deviceID: deviceID) == .usable
+        else { throw DriveError.invalidPrivateFolder }
+        let query = "trashed=false and '\(folderID)' in parents and properties has { key='personalCaptureFeedback' and value='1' }"
+        var components = URLComponents(url: DriveEndpoint.api.appendingPathComponent("files"), resolvingAgainstBaseURL: false)!
+        components.queryItems = [URLQueryItem(name: "q", value: query),
+                                 URLQueryItem(name: "pageSize", value: "2"),
+                                 URLQueryItem(name: "fields", value: "nextPageToken,files(\(DriveMetadata.fields))")]
+        let listed = try await send("GET", components.url!)
+        try Self.requireSuccess(listed)
+        struct Files: Decodable { let files: [DriveFileMetadata]; let nextPageToken: String? }
+        guard let reply = try? JSONDecoder().decode(Files.self, from: listed.body),
+              reply.nextPageToken == nil, reply.files.count <= 1 else { throw DriveError.invalidResponse }
+        guard let report = reply.files.first else { return .unavailable }
+        guard let reportID = report.id, WorkerContract.isDriveIdentifier(reportID), report.mimeType == "application/json",
+              report.shared == false, report.ownedByMe == true, report.trashed == false,
+              report.parents == [folderID], report.properties["personalCaptureFeedback"] == "1",
+              report.properties["sourceFolder"] == folderID, report.properties["device"] == deviceID,
+              let size = report.size, size > 0, size <= Int64(Self.maxResponseBytes)
+        else { throw DriveError.invalidResponse }
+        // Recheck metadata after discovery. Never follow a report moved/shared in between.
+        guard let fresh = try await metadata(id: reportID), fresh == report else { throw DriveError.invalidResponse }
+        let url = DriveEndpoint.api.appendingPathComponent("files").appendingPathComponent(reportID)
+        var media = URLComponents(url: url, resolvingAgainstBaseURL: false)!
+        media.queryItems = [URLQueryItem(name: "alt", value: "media")]
+        let response = try await send("GET", media.url!)
+        try Self.requireSuccess(response)
+        guard response.body.count == Int(size), Checksums.compute(data: response.body).md5 == report.md5Checksum
+        else { throw DriveError.invalidResponse }
+        return WorkerFeedback.parse(response.body, now: now, folderID: folderID, deviceID: deviceID)
+    }
+
     // MARK: - Folder
 
     /// Reuses the stored inbox folder when it is still a valid, private capture inbox

@@ -258,7 +258,7 @@ def init_config(path, account, prog, remote=None, model=None, force=False, root=
                 next_step=command(prog, 'doctor', '--config', path))
 
 
-def update_config(path, prog, account=None, remote=None, model=None, root=None, language=None, publish=None):
+def update_config(path, prog, account=None, remote=None, model=None, root=None, language=None, publish=None, feedback=None):
     """Changes only the values given; keeps the pinned folder and every other setting."""
     path = Path(os.path.expanduser(path))
     retry = _retry(prog, 'set', path, remote=remote, model=model, root=root, language=language)
@@ -268,11 +268,11 @@ def update_config(path, prog, account=None, remote=None, model=None, root=None, 
     if not path.is_file():
         return dict(state='error', error='config_not_found', config=str(path), next_step=STEP_4)
     wanted = dict(expected_account=account, remote=remote, model=model and _user_path(model),
-                  root=root and _user_path(root), language=language, publish=publish)
+                  root=root and _user_path(root), language=language, publish=publish, feedback=feedback)
     wanted = {key: value for key, value in wanted.items() if value is not None}
     if not wanted:
         return dict(state='error', error='nothing_to_set',
-                    next_step='Name what to change: --model, --root, --language, --account, --remote or --publish.')
+                    next_step='Name what to change: --model, --root, --language, --account, --remote, --publish or --feedback.')
     config = json.loads(path.read_text(encoding='utf-8'))
     changed = {key: dict(old=config.get(key), new=value) for key, value in wanted.items()
                if config.get(key) != value}
@@ -283,6 +283,9 @@ def update_config(path, prog, account=None, remote=None, model=None, root=None, 
     if 'expected_account' in changed and config.get('folder_id'):
         result['note'] = ('The pinned folder belongs to the old account. Run probe and pin the new '
                           "account's folder (docs/worker.md steps 6 and 7).")
+    elif feedback is True and 'feedback' in changed:
+        result['next_step'] = command(prog, 'feedback', '--config', path, '--dry-run')
+        result['note'] = 'Feedback is on: each capture run also sends IDs, hashes and processing states to the phone inbox; no audio or text.'
     elif publish is True and 'publish' in changed:
         result['next_step'] = command(prog, 'publish', '--config', path, '--dry-run')
         result['note'] = ('Publishing is on: each run now also copies new transcripts as Google Docs into '
@@ -549,6 +552,10 @@ def doctor(path, prog):
         checks.append(dict(check='folder_id', status=WARN, detail='not pinned yet (run never imports without it)',
                            next_step=command(prog, 'probe', '--config', shown)))
     _check_publish(checks, config, prog, shown)
+    checks.append(dict(check='feedback', status=OK,
+                       detail=('on: capture run publishes metadata-only processing states to the pinned phone inbox'
+                               if config.get('feedback') is True else
+                               'off: no processing-state report is sent to the phone (set --feedback on to opt in)')))
     root = Path(config['root'])
     existing = root
     while not existing.exists() and existing != existing.parent:

@@ -22,6 +22,8 @@ final class AppModel {
     let recorder: RecorderController
     let auth: GoogleSignInController
     private(set) var settings: SyncSettings
+    private(set) var workerFeedback = WorkerFeedback.unavailable
+    private(set) var transcriptionSummary = "Sin confirmar"
     private(set) var counts = QueueCounts()
     private(set) var recordings: [RecordingRow] = []
     private(set) var network: NetworkConditions
@@ -161,6 +163,7 @@ final class AppModel {
 
     func sceneEnteredBackground() {
         isInBackground = true
+        clearWorkerFeedback()
         if recorder.state == .interrupted {
             // Paused while on screen (often the call that just took the screen): the
             // card is not visible any more, so the notice says it.
@@ -353,6 +356,7 @@ final class AppModel {
     }
 
     func unlinkDrive() async {
+        clearWorkerFeedback()
         await cancelSync()
         do {
             try await auth.signOut()
@@ -392,6 +396,7 @@ final class AppModel {
             return false
         }
         guard !GoogleCredential.sameAccount(owner, email) else { return false }
+        clearWorkerFeedback()
         await cancelSync()
         if let queue {
             do {
@@ -688,6 +693,7 @@ final class AppModel {
 
     private func networkChanged(_ conditions: NetworkConditions) {
         network = conditions
+        if !conditions.online || (!conditions.wifi && !manualWindowOpen) { clearWorkerFeedback() }
         if conditions.online { requestSync() }
     }
 
@@ -775,7 +781,52 @@ final class AppModel {
         counts = QueueCounts(items)
         nextAttemptDates = items.filter { $0.state == .pending }.compactMap(\.nextAttemptAt)
         recordings = rows
+        await refreshWorkerFeedback()
     }
+
+    func refreshWorkerFeedback() async {
+        // Expire displayed evidence before waiting on any in-flight network request.
+        if !workerFeedback.isFresh(at: now()) {
+            workerFeedback = .unavailable
+            transcriptionSummary = "Sin confirmar"
+        }
+        guard !feedbackRunning else { return }
+        feedbackRequests &+= 1
+        let request = feedbackRequests
+        guard let sync, isLinked, driveStateMatchesLinkedAccount, !isInBackground,
+              network.online, network.wifi || manualWindowOpen, let folder = settings.folderID else {
+            clearWorkerFeedback(); return
+        }
+        let email = linkedEmail
+        feedbackRunning = true
+        defer { feedbackRunning = false }
+        let feedback = (try? await sync.workerFeedback(allowsCellular: manualWindowOpen)) ?? .unavailable
+        let items = await queue?.items() ?? []
+        guard request == feedbackRequests, isLinked, linkedEmail == email,
+              settings.folderID == folder, driveStateMatchesLinkedAccount,
+              !isInBackground, network.online else { return }
+        workerFeedback = feedback
+        guard feedback.isFresh(at: now()) else { clearWorkerFeedback(); return }
+        let uploaded = items.filter { $0.state == .verified }
+        let states = uploaded.map { feedback.state(id: $0.driveFileID ?? "", sha: $0.sha256) }
+        let errors = states.filter { $0 == "error" }.count
+        let waiting = states.filter { $0 == "downloaded" }.count
+        let unknown = states.filter { $0 == nil }.count
+        if uploaded.isEmpty { transcriptionSummary = items.isEmpty ? "Sin archivos" : "Esperando subida" }
+        else if errors > 0 { transcriptionSummary = "\(errors) con error" }
+        else if waiting > 0 { transcriptionSummary = "\(waiting) pendientes" }
+        else if unknown > 0 { transcriptionSummary = "\(unknown) sin confirmar" }
+        else { transcriptionSummary = "Sin pendientes" }
+    }
+
+    func clearWorkerFeedback() {
+        feedbackRequests &+= 1
+        workerFeedback = .unavailable
+        transcriptionSummary = "Sin confirmar"
+    }
+
+    @ObservationIgnored private var feedbackRequests: UInt64 = 0
+    @ObservationIgnored private var feedbackRunning = false
 
     @ObservationIgnored private var libraryRequests: UInt64 = 0
     @ObservationIgnored private var libraryApplied: UInt64 = 0

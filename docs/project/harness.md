@@ -56,7 +56,9 @@ otra validación de producto ni certifica todas las plataformas.
 El `main` tomado como base es `211e874fc440551e397195c8f2f5d4ae2267913b`.
 La rama local anterior `codex/ios-mauro-handoff` contiene mejoras de apps y un
 contrato de distribución específico todavía no publicados en esa base.
-No se incorporan por esta adopción ni se presentan como capacidades de `main`.
+La adopción inicial no las incorporó. La ola posterior iOS/feedback integra sólo
+iOS y el retorno de metadatos (ver [spec](ios-feedback-spec.md)); las mejoras
+Android de aquella rama conservan su propia integración pendiente.
 Reconciliar cada candidata con su fuente antes de portarla o distribuirla.
 
 Para iOS, el fork público de distribución tiene evidencia histórica de un
