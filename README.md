@@ -96,6 +96,11 @@ opt-in transcript publisher (`publish.py`, writes only its own Drive folder);
 
 ## Status / contribution
 
+El [harness integral de Captura](docs/project/harness.md) conecta objetivos,
+responsables, fuentes y criterios de cierre de todo el proyecto. Los agentes lo
+leen desde `AGENTS.md`; distingue validación técnica, QA física y distribución.
+No agrega ejecución automática a la app.
+
 Open-source prototype; source code is public, not a production-ready app release. Contributions should make the bridge
 simpler or more reliable, not add a personal secretary or SaaS. Before any release:
 review licenses and dependency notices, build from clean checkout, configure a new
