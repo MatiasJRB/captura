@@ -26,6 +26,21 @@ FIELDS = 'id,name,mimeType,size,md5Checksum,parents,properties,shared,ownedByMe,
 class SafeError(Exception):
     pass
 
+def parse_token_expiry(value):
+    """Normalize Go's RFC3339 precision for Python 3.9 without extending expiry."""
+    if not isinstance(value, str):
+        raise SafeError('existing_drive_token_metadata_invalid')
+    match = re.fullmatch(r'(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(?:\.(\d{1,9}))?(Z|[+-]\d{2}:\d{2})', value)
+    if not match:
+        raise SafeError('existing_drive_token_metadata_invalid')
+    base, fraction, zone = match.groups()
+    normalized = base + ('.' + fraction[:6].ljust(6, '0') if fraction else '')
+    normalized += '+00:00' if zone == 'Z' else zone
+    try:
+        return datetime.fromisoformat(normalized)
+    except ValueError:
+        raise SafeError('existing_drive_token_metadata_invalid') from None
+
 class NoRedirect(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, *args, **kwargs):
         raise SafeError('google_redirect_rejected')
@@ -96,7 +111,7 @@ def drive_token(config, project=None):
         if parser[config['remote']]['type'] != 'drive':
             raise SafeError('remote_not_drive')
         token = json.loads(parser[config['remote']]['token'])
-        expiry = datetime.fromisoformat(token.get('expiry', '').replace('Z', '+00:00'))
+        expiry = parse_token_expiry(token.get('expiry'))
         return token if expiry.timestamp() > time.time() + 60 else None
     try:
         token = cached()
