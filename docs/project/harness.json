@@ -1,0 +1,208 @@
+{
+  "schemaVersion": 1,
+  "objective": "Captura open source: voz consentida a evidencia verificable en Android/iOS, sincronización opcional, transcripción local y revisión externa.",
+  "owner": "Mantenedor de Captura; responsables por frente en este mapa.",
+  "canonicalSource": "docs/project/harness.md",
+  "updatedAt": "2026-10-21",
+  "executionAuthorizedByContract": false,
+  "subprojects": [
+    {
+      "id": "android",
+      "objective": "Capturar por tramos y sincronizar con consentimiento, conservando originales y estado real ante cortes.",
+      "owner": "Responsable Android; mantenedor coordina instalación y tester físico.",
+      "status": "needs_review",
+      "sources": [
+        "docs/android.md",
+        "android/src/org/example/captura/CaptureService.java",
+        "android/src/org/example/captura/SyncQueue.java"
+      ],
+      "nextAction": "Conciliar main con las mejoras Android locales; elegir y validar una candidata antes de instalar, sin tocar un grabador activo.",
+      "dependencies": [
+        "Consentimiento para instalación/prueba física; SDK configurado; firma propia fuera del repo."
+      ],
+      "acceptance": [
+        "Original conservado y hash válido; interrupción visible sin falso éxito.",
+        "Cola recuperable y subida opt-in sin duplicados; no inferir transcripción desde subida."
+      ],
+      "qa": [
+        {
+          "mode": "technical",
+          "scenario": "Regresión de grabación/cola y build Android.",
+          "expected": "Pruebas y APK compilan sobre la candidata exacta.",
+          "reason": "Comprueba reglas sin activar hardware.",
+          "evidence": "Caso, actor, commit/build, entorno/dispositivo, fecha, esperado/observado, evidencia y revisión; no contiene audio ni credenciales."
+        },
+        {
+          "mode": "human_physical",
+          "scenario": "Inicio/detención, interrupción y recuperación offline en Android real.",
+          "expected": "Audio consentido conservado, micrófono y cola con estado correcto.",
+          "reason": "Segundo plano y audio requieren hardware y experiencia física.",
+          "evidence": "Caso, actor, commit/build, entorno/dispositivo, fecha, esperado/observado, evidencia y revisión; no contiene audio ni credenciales."
+        }
+      ]
+    },
+    {
+      "id": "ios",
+      "objective": "Mantener paridad de captura y distribuir una candidata identificable por el circuito de firma existente.",
+      "owner": "Responsable iOS/agente con acceso; titular de Apple conserva cuenta y firma; tester con iPhone valida.",
+      "status": "needs_review",
+      "sources": [
+        "docs/ios.md",
+        "docs/ios.es.md",
+        "docs/testflight.md",
+        ".github/workflows/ios-testflight.yml",
+        "ios/Captura/Recording/RecorderController.swift"
+      ],
+      "nextAction": "Conciliar main con la candidata local y verificar acceso vigente al circuito de distribución antes de firmar o subir.",
+      "dependencies": [
+        "Acceso autorizado al circuito, identidad Apple y OAuth existentes; iPhone sólo para el gate físico."
+      ],
+      "acceptance": [
+        "Build fuente fijo, firma válida y procesamiento/disponibilidad TestFlight verificados por separado.",
+        "Pruebas reales de permisos, interrupciones y silencio sobre el build distribuido; conservar datos al actualizar."
+      ],
+      "qa": [
+        {
+          "mode": "technical",
+          "scenario": "CapturaCore y build iPhone sin firma.",
+          "expected": "Checks de código pasan; no afirmar instalación.",
+          "reason": "La compilación no requiere micrófono ni cuenta Apple.",
+          "evidence": "Caso, actor, commit/build, entorno/dispositivo, fecha, esperado/observado, evidencia y revisión; no contiene audio ni credenciales."
+        },
+        {
+          "mode": "human_physical",
+          "scenario": "Instalar candidata y probar UI, toma consentida e interrupción en iPhone.",
+          "expected": "Versión/build visible, toma conservada y estado real.",
+          "reason": "Simulator o build no prueba experiencia de iPhone.",
+          "evidence": "Caso, actor, commit/build, entorno/dispositivo, fecha, esperado/observado, evidencia y revisión; no contiene audio ni credenciales."
+        }
+      ]
+    },
+    {
+      "id": "worker",
+      "objective": "Importar, verificar, transcribir y recuperar archivos cerrados sin perder originales ni duplicar efectos.",
+      "owner": "Responsable worker/CLI; cada usuario posee su Mac, modelos y carpeta privada.",
+      "status": "needs_review",
+      "sources": [
+        "docs/worker.md",
+        "worker/worker.py",
+        "worker/publish.py",
+        "worker/test_worker.py",
+        "docs/verification.md"
+      ],
+      "nextAction": "Revisar contrato de importación, reintentos y publicación contra la fuente actual; elegir una regresión pendiente con fixtures ficticios.",
+      "dependencies": [
+        "Original cerrado y hash coincidente; cuenta/carpeta privada configurada por su titular para QA real."
+      ],
+      "acceptance": [
+        "Sólo importar fuente permitida; dedupe y fallo/reintento no pierden ni alteran originales.",
+        "Publicación de texto sólo opt-in en carpeta propia y privada; tests no publican ni acceden a cuentas."
+      ],
+      "qa": [
+        {
+          "mode": "technical",
+          "scenario": "Importación, hash, ASR fallida/reintento y publisher con transporte ficticio.",
+          "expected": "Contrato de archivos y recibos se conserva; efectos controlados sin red.",
+          "reason": "Reglas deterministas reproducibles sin datos personales.",
+          "evidence": "Caso, actor, commit/build, entorno/dispositivo, fecha, esperado/observado, evidencia y revisión; no contiene audio ni credenciales."
+        }
+      ]
+    },
+    {
+      "id": "feedback",
+      "objective": "Distinguir captura, subida y transcripción con procedencia y vigencia; mostrar desconocido sin retorno real.",
+      "owner": "Responsable de contrato de estado; implementadores Android/iOS/worker acuerdan archivos antes de editar.",
+      "status": "needs_review",
+      "sources": [
+        "docs/agent-interface.md",
+        "docs/verification.md",
+        "ios/Captura/App/AppModel.swift",
+        "android/src/org/example/captura/MainActivity.java"
+      ],
+      "nextAction": "Inventariar por plataforma lo que main soporta y lo que sigue local o pendiente; especificar el retorno de estado antes de anunciarlo.",
+      "dependencies": [
+        "Contrato de IDs/hashes y fecha; retorno efectivamente implementado y autorizado; texto/IA sólo con consentimiento propio."
+      ],
+      "acceptance": [
+        "Subido no equivale a transcrito; feedback ausente/vencido nunca muestra éxito.",
+        "Temas/citas no se presentan como interpretación semántica ni atribución de hablante sin evidencia."
+      ],
+      "qa": [
+        {
+          "mode": "technical",
+          "scenario": "Estado ausente, vencido, hash incorrecto o error de lectura.",
+          "expected": "La representación vuelve a desconocido y no retiene un éxito antiguo.",
+          "reason": "Los estados se pueden comprobar con fixtures.",
+          "evidence": "Caso, actor, commit/build, entorno/dispositivo, fecha, esperado/observado, evidencia y revisión; no contiene audio ni credenciales."
+        },
+        {
+          "mode": "agent_ui",
+          "scenario": "Navegar UI real con reporte de prueba válido y luego ausente, cuando exista el retorno.",
+          "expected": "Estados y mensajes corresponden a la evidencia vigente.",
+          "reason": "Navegación por UI confirma presentación; no sustituye QA de audio.",
+          "evidence": "Caso, actor, commit/build, entorno/dispositivo, fecha, esperado/observado, evidencia y revisión; no contiene audio ni credenciales."
+        }
+      ]
+    },
+    {
+      "id": "agent-interface",
+      "objective": "Ofrecer evidencia legible por agentes externos sin convertir voz capturada en acciones automáticas.",
+      "owner": "Responsable de interfaz read-only; el agente externo y su usuario poseen autorizaciones y ejecución.",
+      "status": "needs_review",
+      "sources": [
+        "docs/agent-interface.md",
+        "bin/capture",
+        "worker/reader.py",
+        "docs/privacy.md"
+      ],
+      "nextAction": "Verificar compatibilidad del formato/CLI con ejemplos ficticios y definir cualquier cambio de contrato antes de implementarlo.",
+      "dependencies": [
+        "Registros válidos con procedencia; autorización externa independiente para cualquier acción."
+      ],
+      "acceptance": [
+        "CLI/viewer no ejecutan instrucciones capturadas y mantienen originales/procedencia.",
+        "Una entrega a agente externo requiere recibo propio; el repo no almacena su memoria ni backlog personal."
+      ],
+      "qa": [
+        {
+          "mode": "technical",
+          "scenario": "List/read/view con contenido ficticio hostil y esquemas válidos/invalidos.",
+          "expected": "Lectura segura offline, escape de contenido y ausencia de ejecución.",
+          "reason": "Comprueba la frontera de datos sin tareas personales reales.",
+          "evidence": "Caso, actor, commit/build, entorno/dispositivo, fecha, esperado/observado, evidencia y revisión; no contiene audio ni credenciales."
+        }
+      ]
+    },
+    {
+      "id": "open-source",
+      "objective": "Mantener un repo comprensible y reproducible, con documentación, privacidad, licencias y entrega verificable.",
+      "owner": "Mantenedor Captura; implementador de cada PR conserva evidencia y prepara release.",
+      "status": "needs_review",
+      "sources": [
+        "README.md",
+        "AGENTS.md",
+        "NOTICE.md",
+        "docs/release.md",
+        "scripts/check_public_tree.py",
+        ".claude/skills/captura-setup/SKILL.md"
+      ],
+      "nextAction": "Publicar esta adopción integral por PR y verificar AGENTS, mapa y fuentes en main; producto y binarios conservan sus propios gates.",
+      "dependencies": [
+        "Tests y build pertinentes; inspección de contenido público; permisos de publicación específicos."
+      ],
+      "acceptance": [
+        "Harness integral enlazado desde AGENTS/README y verificable en main, no sólo en una rama local.",
+        "Fuente pública sin secretos, audios ni configs privadas; release no confunde código, ZIP, IPA y distribución."
+      ],
+      "qa": [
+        {
+          "mode": "technical",
+          "scenario": "Contrato, enlaces, public-tree, tests y diff por SHA.",
+          "expected": "Checks pasan y el PR contiene sólo la adopción aprobada.",
+          "reason": "Adopción documental sin hardware ni publicación de binarios.",
+          "evidence": "Caso, actor, commit/build, entorno/dispositivo, fecha, esperado/observado, evidencia y revisión; no contiene audio ni credenciales."
+        }
+      ]
+    }
+  ]
+}
